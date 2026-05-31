@@ -1,4 +1,4 @@
-const CACHE_NAME = "simple-pwa-v1";
+const CACHE_NAME = "breath-pwa-v1";
 const FILES = [
   "./",
   "./index.html",

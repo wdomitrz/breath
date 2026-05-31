@@ -3,19 +3,67 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A simple paced breathing PWA for calm, conscious breathing sessions."
+    />
     <meta name="theme-color" content="#0f766e" />
-    <title>Simple PWA</title>
+    <title>Breath</title>
     <link rel="manifest" href="manifest.json" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="style.css" />
     <script defer src="app.js"></script>
   </head>
   <body>
-    <main>
-      <img src="icon.svg" alt="" width="72" height="72" />
-      <h1>Simple PWA</h1>
-      <p id="message">Hello, World!</p>
-      <button id="hello-button" type="button">Say hello</button>
+    <main class="app-shell">
+      <section class="pacer" aria-label="Breathing pacer">
+        <div class="breath-stage" aria-hidden="true">
+          <div id="breath-ring" class="breath-ring">
+            <div id="breath-orb" class="breath-orb"></div>
+          </div>
+        </div>
+
+        <div class="readout" role="status" aria-live="polite">
+          <p id="phase-label" class="phase-label">Inhale</p>
+        </div>
+
+        <div class="metrics" aria-label="Session details">
+          <div>
+            <span>Pattern</span>
+            <div class="pattern-inputs">
+              <label>
+                <span>Inhale</span>
+                <input
+                  id="inhale-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="3"
+                  max="10"
+                  step="1"
+                />
+              </label>
+              <span class="pattern-separator" aria-hidden="true">·</span>
+              <label>
+                <span>Exhale</span>
+                <input
+                  id="exhale-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="3"
+                  max="12"
+                  step="1"
+                />
+              </label>
+            </div>
+          </div>
+          <div>
+            <span>Pace</span>
+            <strong id="pace-label">6 breaths/min</strong>
+          </div>
+        </div>
+
+        <p id="validation-message" class="validation-message" role="status"></p>
+      </section>
     </main>
   </body>
 </html>
