@@ -1,0 +1,59 @@
+# Coding Instructions
+
+- Build a small static progressive web app in plain HTML, CSS, JavaScript, JSON, and SVG.
+- Keep the app build-free: no bundler, transpiler, framework, generated CSS, runtime package install, or compile step.
+- Keep the app files simple and explicit: `index.html`, `style.css`, `app.js`, `sw.js`, `icon.svg`, and `manifest.json`.
+- Use `index.html` for semantic document structure, app metadata, and asset links.
+- Use `style.css` for all styling.
+- Use `app.js` for browser logic, state management, rendering, event handling, and service worker registration.
+- Use `sw.js` only for service worker install, activate, and fetch behavior.
+- Use `manifest.json` only for PWA install metadata.
+- Use `icon.svg` as both favicon and install icon unless the app clearly needs additional icon files.
+- Keep `README.md` short: a one-line description and deployed app link are enough.
+- Update the deployed app link in `README.md` when the app name or deployment URL changes.
+- Prefer browser platform APIs over dependencies.
+- Do not add runtime dependencies for simple UI state, routing, storage, date handling, or DOM work.
+- If an app appears to need a runtime dependency, make that need explicit before adding it.
+- Keep JavaScript readable: named constants, named functions, clear state, and explicit event handlers.
+- Do not hide important behavior in clever one-liners.
+- Keep DOM lookups easy to find. Put them near the top when that keeps the file clearer, but colocate them with related behavior when that is simpler.
+- Keep startup obvious. There should be one clear path that binds events, renders initial state, and registers the service worker.
+- Keep application state explicit. Use plain objects, arrays, maps, or module-level variables when they are enough.
+- Keep pure calculations separate from DOM rendering once the app has meaningful behavior.
+- Render from state instead of letting DOM text, classes, or attributes become the source of truth.
+- Validate user input before writing it into application state.
+- Store data in `localStorage` only when persistence is useful to the user.
+- Namespace stored values with an app-specific key prefix.
+- Keep error handling practical. Handle recoverable browser API failures; let programming errors surface during development.
+- Use `button` elements for actions.
+- Use `a` elements for navigation.
+- Use labels for form inputs.
+- Preserve visible keyboard focus states.
+- Use `aria-live` or `role="status"` for dynamic text that users need to notice.
+- Keep touch targets large enough for mobile use.
+- Avoid interactions that require hover.
+- Keep CSS selectors purposeful. Prefer classes for styling and IDs for unique JavaScript hooks.
+- Keep layout responsive with simple `grid`, `flex`, `width: min(...)`, and media queries.
+- Do not use viewport-scaled font sizes for normal UI text.
+- Keep text inside its containers on small screens.
+- Keep colors simple, but avoid making the entire app one undifferentiated hue.
+- Respect `prefers-color-scheme` when it is easy to do so.
+- Avoid decorative complexity unless it helps the app's actual purpose.
+- Do not add hidden build assumptions. Opening the files should reveal all runtime code.
+- Serve locally with `make serve` and open `http://localhost:8000/`.
+- Do not rely on `file://` for PWA testing. Service workers require `localhost` or HTTPS.
+- Keep `sw.js` small and predictable: skip caching on localhost, cache the app shell when deployed, handle `GET` requests with a cache-first fallback, and update its file list and cache name together.
+- Do not swallow service worker registration failures silently. Logging a warning is enough.
+- Keep `manifest.json` valid JSON.
+- Keep `manifest.json` aligned with `index.html`: app name, theme color, start URL, scope, and icon should agree.
+- Use `"display": "standalone"` unless the app specifically needs another display mode.
+- Use `"start_url": "."` and `"scope": "."` for simple root-hosted apps.
+- After one successful HTTPS load, the deployed app should be able to reload offline.
+- Test a deployed build by loading once, going offline, and reloading.
+- Run `make` before finishing changes.
+- Treat `make format` as the canonical formatter.
+- Use `npx prettier --write` and `npx eslint` for formatting and linting only. `npx` is development tooling, not a build step or runtime dependency.
+- Use `python3 -m json.tool --indent 2 manifest.json | sponge manifest.json` for JSON formatting.
+- Treat `make check` as the minimum verification command.
+- `make check` should verify required files, validate JSON, check formatting with Prettier, lint JavaScript with ESLint, check JavaScript syntax with `node`, and confirm `sw.js` lists app shell files.
+- Keep verification notes honest and mention any checks that were not run.
