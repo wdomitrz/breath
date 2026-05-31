@@ -1,11 +1,11 @@
 {
-  "name": "Simple PWA",
-  "short_name": "PWA",
+  "name": "Breath",
+  "short_name": "Breath",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
   "theme_color": "#0f766e",
-  "background_color": "#f8fafc",
+  "background_color": "#f6f2ea",
   "icons": [
     {
       "src": "icon.svg",

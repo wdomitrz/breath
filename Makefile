@@ -1,7 +1,7 @@
 .PHONY: all format check serve
 
 APP_FILES := index.html style.css app.js sw.js icon.svg manifest.json
-PRETTIER_FILES := index.html style.css app.js sw.js manifest.json README.md INSTRUCTIONS.md eslint.config.mjs
+PRETTIER_FILES := index.html style.css app.js sw.js manifest.json README.md eslint.config.mjs
 
 all: format check
 

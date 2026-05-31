@@ -1,3 +1,5 @@
-# Simple PWA Template
+# Breath
 
-[Simple PWA Template](https://wdomitrz.github.io/pwa_template/)
+[Breath](https://wdomitrz.github.io/breath/)
+
+Inspired by [breathe-cli](./breathe-cli/).
