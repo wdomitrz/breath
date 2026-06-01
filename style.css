@@ -33,10 +33,12 @@ body {
     sans-serif;
 }
 
+button,
 input {
   font: inherit;
 }
 
+button:focus-visible,
 input:focus-visible {
   outline: 3px solid #2563eb;
   outline-offset: 3px;
@@ -107,6 +109,16 @@ p {
   font-size: 2rem;
   font-weight: 700;
   line-height: 1.1;
+}
+
+.sound-button {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 8px 18px;
 }
 
 .metrics {

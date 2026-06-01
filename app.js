@@ -21,6 +21,7 @@
     breathRing: document.querySelector("#breath-ring"),
     breathOrb: document.querySelector("#breath-orb"),
     phaseLabel: document.querySelector("#phase-label"),
+    soundButton: document.querySelector("#sound-button"),
     paceLabel: document.querySelector("#pace-label"),
     inhaleInput: document.querySelector("#inhale-input"),
     exhaleInput: document.querySelector("#exhale-input"),
@@ -193,9 +194,7 @@
       input.addEventListener("change", handleInputChange);
     });
 
-    ["pointerdown", "keydown", "touchstart"].forEach((eventName) => {
-      window.addEventListener(eventName, unlockAudio, { once: true });
-    });
+    elements.soundButton.addEventListener("click", handleSoundButtonClick);
   }
 
   function handlePhaseCue(phase, settingsAreValid) {
@@ -217,21 +216,34 @@
   function unlockAudio() {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) {
-      return;
+      return false;
     }
 
     if (audioContext === null) {
       audioContext = new AudioContextClass();
     }
 
-    audioContext
-      .resume()
-      .then(() => {
-        audioReady = true;
-      })
-      .catch((error) => {
+    audioReady = true;
+    updateSoundButton();
+
+    if (audioContext.state === "suspended") {
+      audioContext.resume().catch((error) => {
         console.warn("Audio cue setup failed.", error);
       });
+    }
+
+    return true;
+  }
+
+  function handleSoundButtonClick() {
+    unlockAudio();
+  }
+
+  function updateSoundButton() {
+    elements.soundButton.textContent = audioReady
+      ? "Sound enabled"
+      : "Enable sound";
+    elements.soundButton.disabled = audioReady;
   }
 
   function playCue(phaseName) {
