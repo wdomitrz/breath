@@ -4,11 +4,11 @@
   const STORAGE_KEY = "breath-pwa-settings-v3";
   const TICK_MS = 80;
   const MIN_CYCLE_SECONDS = 8;
-  const CUE_GAIN = 0.045;
-  const CUE_DURATION_SECONDS = 0.14;
+  const CUE_GAIN = 0.16;
+  const CUE_DURATION_SECONDS = 0.28;
   const CUE_FREQUENCIES = {
-    Inhale: 660,
-    Exhale: 440,
+    Inhale: 740,
+    Exhale: 392,
   };
 
   const DEFAULT_STATE = {
@@ -240,19 +240,26 @@
     }
 
     const oscillator = audioContext.createOscillator();
+    const overtone = audioContext.createOscillator();
     const gain = audioContext.createGain();
     const now = audioContext.currentTime;
+    const frequency = CUE_FREQUENCIES[phaseName];
 
     oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(CUE_FREQUENCIES[phaseName], now);
+    oscillator.frequency.setValueAtTime(frequency, now);
+    overtone.type = "triangle";
+    overtone.frequency.setValueAtTime(frequency * 2, now);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(CUE_GAIN, now + 0.025);
+    gain.gain.exponentialRampToValueAtTime(CUE_GAIN, now + 0.035);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + CUE_DURATION_SECONDS);
 
     oscillator.connect(gain);
+    overtone.connect(gain);
     gain.connect(audioContext.destination);
     oscillator.start(now);
+    overtone.start(now);
     oscillator.stop(now + CUE_DURATION_SECONDS);
+    overtone.stop(now + CUE_DURATION_SECONDS);
   }
 
   function registerServiceWorker() {
