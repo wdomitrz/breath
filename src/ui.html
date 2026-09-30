@@ -3,9 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- The description is read by search engines and shown as the link text's
+         blurb, so it is written for someone deciding whether to open the page.
+         "PWA" is a term for developers and installers, not for the people this
+         line is for. -->
     <meta
       name="description"
-      content="A simple paced breathing PWA for calm, conscious breathing sessions."
+      content="A paced breathing timer for calm, conscious breathing sessions. Set an inhale and an exhale in seconds, follow the ring, and hear a tone at each change of phase."
     />
     <meta name="theme-color" content="#0f766e" />
     <title>Breath</title>
@@ -27,6 +31,10 @@
         color-scheme: light dark;
         --inhale: #0f766e;
         --exhale: #d97706;
+        /* A hold is neither colour. Deliberately desaturated and lighter than
+           both moving phases, so "not breathing right now" is visible without
+           reading the label. */
+        --hold: #64748b;
         --progress: #7d8b84;
         --background: #fbfaf7;
         --surface-muted: #e7eee9;
@@ -114,6 +122,18 @@
         place-items: center;
       }
 
+      /* The progress ring.
+
+         `--phase-progress` is how much of the circle the current phase has
+         swept, and it is painted in `--phase-colour`, which Rust sets per phase.
+         So the ring says *which phase* by its own colour, not only through the
+         label under it: a teal arc is filling, an amber arc is emptying, and a
+         slate arc — present only during a hold — is parked.
+
+         A hold does not sweep, it sits: the top hold holds the arc at full, the
+         bottom hold closes it from full back to empty so that the next inhale
+         begins at full rather than snapping one. That is why a four-phase cycle
+         still reads as one continuous arc rather than four separate sweeps. */
       .breath-ring {
         width: min(70vw, 300px);
         aspect-ratio: 1;
@@ -124,9 +144,17 @@
           radial-gradient(circle, var(--background) 0 40%, transparent 41%),
           conic-gradient(
             from -90deg,
-            var(--progress) var(--phase-progress, 0%),
+            var(--phase-colour, var(--inhale)) var(--phase-progress, 0%),
             var(--surface-muted) 0
           );
+      }
+
+      /* A hold is the absence of movement, so the orb must not ease into it:
+         under reduced motion it snaps, which is what makes a stationary orb
+         read as stationary rather than as a slow drift nobody can see. The
+         colour is still transitioned, because that transition is the cue. */
+      .breath-ring[data-holding="true"] .breath-orb {
+        transition: background-color 160ms linear;
       }
 
       .breath-orb {
@@ -194,17 +222,60 @@
         font-weight: 650;
       }
 
+      /* Four boxes, in the order the cycle runs: inhale, hold, exhale, hold.
+
+         No separators. The dot that separated inhale from exhale in the
+         two-box version cannot survive a fourth item — a four-item sequence
+         around a fixed separator wraps into a 3×2 grid with the dot orphaned in
+         the last cell, which is both uglier and less clear than nothing at all.
+         The labels already name the phases in order, so the row teaches the
+         sequence on its own, and a row of four equal boxes reads as one
+         pattern rather than as two pairs.
+
+         The exhale box is set slightly wider because its allowed range is the
+         longest (3–12 against the inhale's 3–10 and the holds' 0–20), and an
+         even split makes the widest field the one with least room. */
       .pattern-inputs {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-        gap: 8px;
+        grid-template-columns: 1fr 1fr 1.2fr 1fr;
+        gap: 10px 8px;
         align-items: end;
       }
 
-      .pattern-separator {
-        color: var(--progress);
-        font-size: 1.35rem;
-        line-height: 40px;
+      .pattern-caption {
+        grid-column: 1 / -1;
+        margin: 0 0 2px;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      /* A hold of zero is a valid, deliberate setting — "off" — so it gets a
+         visible resting state rather than looking like an unfilled field. The
+         label dims and the word "off" appears, which is also what tells a user
+         without reading anything that the box accepts zero on purpose. */
+      /* Both holds say "Hold", so the one at the bottom of a two-by-two grid is
+         ambiguous on a narrow screen. Naming them by position — which is also
+         how the app's own copy refers to them — removes the ambiguity without
+         adding a word to the wide layout, where the order already implies it. */
+      #hold-in-field span::after {
+        content: " · after in";
+      }
+
+      #hold-out-field span::after {
+        content: " · after out";
+      }
+
+      .hold[data-active="false"] input {
+        opacity: 0.5;
+      }
+
+      /* The hint spans the whole row rather than sitting in a grid cell. */
+      .pattern-hint {
+        grid-column: 1 / -1;
+        margin: 4px 0 0;
+        font-size: 0.72rem;
+        line-height: 1.45;
+        color: var(--muted);
       }
 
       label {
@@ -217,7 +288,7 @@
 
       input {
         width: 100%;
-        min-height: 40px;
+        min-height: 44px;
         border: 1px solid var(--border);
         border-radius: 8px;
         background: transparent;
@@ -261,6 +332,14 @@
         }
       }
 
+      /* Four boxes will not sit on one line at phone widths, so they pair up —
+         still in cycle order, reading down the left column then the right. */
+      @media (max-width: 430px) {
+        .pattern-inputs {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+      }
+
       /* The orb stops easing and snaps between the values Rust writes. Nothing
          else moves on this page, so this is the whole of the reduced-motion
          treatment — the same rule, and the same reason, as the original. */
@@ -274,6 +353,7 @@
         :root {
           --inhale: #2dd4bf;
           --exhale: #f59e0b;
+          --hold: #94a3b8;
           --progress: #8d9a93;
           --background: #121714;
           --surface-muted: #26312d;
@@ -313,7 +393,22 @@
                   autocomplete="off"
                 />
               </label>
-              <span class="pattern-separator" aria-hidden="true">·</span>
+              <!-- A hold is a retention: the pause at the top of the inhale and
+                   at the bottom of the exhale. Zero is a real setting — it means
+                   the cycle has no hold in it — so the minimum is 0 and not 1,
+                   and the label says "off" when it is zero. -->
+              <label class="hold" id="hold-in-field" data-active="false">
+                <span>Hold</span>
+                <input
+                  id="hold-in-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  max="20"
+                  step="1"
+                  autocomplete="off"
+                />
+              </label>
               <label>
                 <span>Exhale</span>
                 <input
@@ -326,6 +421,25 @@
                   autocomplete="off"
                 />
               </label>
+              <label class="hold" id="hold-out-field" data-active="false">
+                <span>Hold</span>
+                <input
+                  id="hold-out-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  max="20"
+                  step="1"
+                  autocomplete="off"
+                />
+              </label>
+              <!-- The two holds are only meaningful once a breath exists, so
+                   they are announced as part of the pattern rather than as two
+                   more loose numbers. -->
+              <p class="hint pattern-hint">
+                Holds are the pauses between breaths. Leave one at 0 to switch it
+                off — try 4 · 4 · 4 · 4 for box breathing.
+              </p>
             </div>
           </div>
           <div>
@@ -346,9 +460,27 @@
         </button>
       </section>
     </main>
-    <noscript>Breath needs JavaScript enabled to load the Rust WebAssembly application.</noscript>
+    <!-- Only ever seen by someone whose browser has scripting switched off, so
+         it has to say what they are missing rather than how the app is built.
+         Naming the implementation here would be worse than useless: the reader
+         cannot act on it, and it makes the one message this person sees sound
+         like a developer's note rather than an explanation. Same rule as
+         everywhere else in the interface — the pacing, the sound cues and the
+         saved settings are described by what they do, never by what they are
+         made of. -->
+    <noscript>Breath needs JavaScript to run. The paced breathing timer, the sound cues at each phase change, and your saved pattern are all handled in this page — with it switched off, none of them can.</noscript>
+    <!-- The loader, and the whole of the page's JavaScript. It does exactly two
+         things: start the app, and — if that fails — say so in the user's own
+         terms.
+
+         Note what is *not* here. The failure message does not append the caught
+         `error`: a thrown dynamic-import failure is a JavaScript TypeError
+         naming the module specifier and the protocol, which is engineering
+         vocabulary shown to someone who cannot act on it and reads as noise.
+         The detail belongs in the console, where a developer will look for it,
+         so the console gets it and the page does not. -->
     <script type="module">
-      import('./app.js').then(m => m.default()).catch(error => { document.getElementById('phase-label').textContent = '—'; const message = document.createElement('p'); message.className = 'validation-message'; message.setAttribute('role', 'alert'); message.textContent = 'Could not load the breathing pacer. Reload the page or check your connection. ' + error; document.querySelector('.pacer').append(message); });
+      import('./app.js').then(m => m.default()).catch(error => { console.error(error); document.getElementById('phase-label').textContent = '—'; const message = document.createElement('p'); message.className = 'validation-message'; message.setAttribute('role', 'alert'); message.textContent = 'Breath could not start. Reload the page, or check your connection if it keeps happening.'; document.querySelector('.pacer').append(message); });
     </script>
   </body>
 </html>

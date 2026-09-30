@@ -1,7 +1,8 @@
 # Breath
 
-A paced-breathing pacer. Inhale for 3–10 seconds, exhale for 3–12, and a ring
-and orb keep the count — with an optional tone at each phase change.
+A paced-breathing pacer. Inhale, hold, exhale, hold — up to four phases in a
+cycle — with a ring and orb to keep the count and an optional tone at each change
+of phase.
 
 The whole app is Rust: the phase, the pacing, the validation, the audio cue and
 the saved settings. `cargo build` writes a publishable static site into `dist/`.
@@ -43,15 +44,22 @@ or the bindings generator.
 any path. Point any file host at it — nginx, Caddy, GitHub Pages,
 `python3 -m http.server` — and open the result.
 
-Set an inhale and an exhale in whole seconds. A cycle must be at least 8 seconds
-and the exhale at most twice the inhale; anything else is refused with a reason
-and the last good pattern keeps running. The pace readout is breaths per
-minute, to one decimal when it is not whole. Your pattern is remembered; the
-cycle always starts fresh on load, so you never resume mid-breath.
+Set an inhale, a hold, an exhale and a hold, in whole seconds. A breath must be
+at least 8 seconds with the exhale no more than twice the inhale; a hold is off at
+zero, otherwise 1–20 seconds and no more than twice the inhale. Anything the
+pacer will not run is refused with a reason, and the last good pattern keeps
+running underneath. Try 4 · 4 · 4 · 4 for box breathing.
 
-Press **Enable sound** once to arm the audio — browsers require a gesture —
-and each phase change will sound a note: a rising 740 Hz for the inhale, 392 Hz
-for the exhale, each doubled by a triangle an octave up.
+A hold is the pause at the top of the inhale and at the bottom of the exhale. It
+has its own colour and its own tone, and the orb holds still rather than
+continuing to grow or shrink — a hold is not a movement. The pace readout counts
+the whole cycle, so held patterns read slower; that is correct, because a held
+breath is not a breath. Your pattern is remembered, and the cycle always starts
+fresh on load, so you never resume mid-breath.
+
+Press **Enable sound** once to arm the audio — browsers require a gesture — and
+each phase change will sound a note: 740 Hz for the inhale, 392 Hz for the
+exhale, and 587 Hz for either hold, each doubled by a triangle an octave up.
 
 ## In CI
 

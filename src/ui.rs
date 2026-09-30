@@ -23,12 +23,19 @@ use web_sys::{
 };
 
 use crate::pacer::{
-    parse_whole_seconds, settings_from_json, Pacer, PersistedSettings, Phase, Settings, Validation,
-    STORAGE_KEY, TICK_MS,
+    parse_whole_seconds, settings_from_json, Pacer, PersistedSettings, Phase, PhaseKind, Settings,
+    Validation, STORAGE_KEY, TICK_MS,
 };
 
 /// The custom properties the shell's CSS reads, and what each one means.
 const PROP_PROGRESS: &str = "--phase-progress";
+/// The ring's own colour, set per phase so the arc itself says which phase.
+const PROP_RING_COLOUR: &str = "--phase-colour";
+/// The attribute the stylesheet keys off to drop the orb's size easing during a
+/// hold.
+const ATTR_HOLDING: &str = "data-holding";
+/// Marks a hold box as in use rather than switched off.
+const ATTR_ACTIVE: &str = "data-active";
 const PROP_PHASE_COLOR: &str = "--phase-color";
 const PROP_ORB_SCALE: &str = "--orb-scale";
 
@@ -39,10 +46,19 @@ const PROP_ORB_SCALE: &str = "--orb-scale";
 /// light and dark variants of the palette from the stylesheet rather than from a
 /// hex literal in the script, so `prefers-color-scheme` keeps working without
 /// anything here knowing the dark values exist.
-fn phase_colour(name: &str) -> &'static str {
-    match name {
-        "Inhale" => "var(--inhale)",
-        _ => "var(--exhale)",
+///
+/// **A hold gets its own colour, and this is what makes it readable without a
+/// label.** With only the original two, a hold would have to borrow one of them,
+/// and a hold after the exhale would look exactly like the inhale about to
+/// follow — the one moment where telling them apart is the entire point. The
+/// hold colour is a desaturated slate between the two: unmistakably *neither*
+/// moving colour, so "I am not breathing right now" is visible at a glance and
+/// does not depend on reading the word under the orb.
+fn phase_colour(kind: PhaseKind) -> &'static str {
+    match kind {
+        PhaseKind::Inhale => "var(--inhale)",
+        PhaseKind::Exhale => "var(--exhale)",
+        PhaseKind::HoldIn | PhaseKind::HoldOut => "var(--hold)",
     }
 }
 
@@ -73,8 +89,18 @@ struct App {
     validation_message: Element,
     /// The inhale duration input.
     inhale_input: HtmlInputElement,
+    /// The label wrapping the hold-after-inhale box, so its "off" state can be
+    /// marked. Zero is a deliberate setting, not an empty field, and a user has
+    /// to be able to tell that without reading the help text.
+    hold_in_field: Element,
+    /// The hold-after-inhale duration input.
+    hold_in_input: HtmlInputElement,
     /// The exhale duration input.
     exhale_input: HtmlInputElement,
+    /// The label wrapping the hold-after-exhale box.
+    hold_out_field: Element,
+    /// The hold-after-exhale duration input.
+    hold_out_input: HtmlInputElement,
     /// The "Enable sound" button.
     sound_button: HtmlButtonElement,
     /// The document, for the active element a tick compares against.
@@ -107,7 +133,11 @@ impl App {
             pace_label: element(&document, "pace-label"),
             validation_message: element(&document, "validation-message"),
             inhale_input: input(&document, "inhale-input"),
+            hold_in_field: element(&document, "hold-in-field"),
+            hold_in_input: input(&document, "hold-in-input"),
             exhale_input: input(&document, "exhale-input"),
+            hold_out_field: element(&document, "hold-out-field"),
+            hold_out_input: input(&document, "hold-out-input"),
             sound_button: button(&document, "sound-button"),
             document,
             performance,
@@ -132,12 +162,8 @@ impl App {
         // Both duration boxes and the button listen against this one handle,
         // which is the same state the render timer draws from. Three separate
         // copies of the app would each drift; one cannot.
-        for field in [Field::Inhale, Field::Exhale] {
-            let target = match field {
-                Field::Inhale => self.inhale_input.as_ref(),
-                Field::Exhale => self.exhale_input.as_ref(),
-            };
-            listen_change(target, Rc::clone(shared), field);
+        for field in [Field::Inhale, Field::HoldIn, Field::Exhale, Field::HoldOut] {
+            listen_change(field.element(self).as_ref(), Rc::clone(shared), field);
         }
         listen_sound(self.sound_button.as_ref(), Rc::clone(shared));
     }
@@ -180,23 +206,9 @@ impl App {
     /// keeps running underneath the message — and it is the better of the two
     /// readings: a box being typed into should not freeze the orb.
     fn on_pattern_change(&mut self, field: Field) {
-        let (inhale, exhale) = (
-            parse_whole_seconds(&self.inhale_input.value()),
-            parse_whole_seconds(&self.exhale_input.value()),
-        );
-
         let mut settings = self.pacer.settings;
-        match field {
-            Field::Inhale => {
-                if let Some(seconds) = inhale {
-                    settings.inhale_seconds = seconds;
-                }
-            }
-            Field::Exhale => {
-                if let Some(seconds) = exhale {
-                    settings.exhale_seconds = seconds;
-                }
-            }
+        if let Some(seconds) = field.read(self) {
+            field.write(&mut settings, seconds);
         }
 
         self.pacer.settings = settings;
@@ -266,10 +278,17 @@ impl App {
             .set_text_content(Some(&settings.pace_label()));
         self.phase_label.set_text_content(Some(phase.name));
         self.sync_inputs(settings);
+        self.sync_hold_fields(settings);
         self.cue_if_phase_changed(&phase, validation);
     }
 
-    /// The ring's sweep and the orb's colour and size.
+    /// The ring's sweep and colour, and the orb's colour and size.
+    ///
+    /// The ring is also told whether the pacer is holding, because the CSS uses
+    /// it to drop the orb's size transition: a hold is the absence of movement,
+    /// and an orb that eases between two sizes it is not visiting reads as a
+    /// slow drift rather than as stillness. Colouring the ring per phase is
+    /// what lets "I am holding" be seen without reading the label.
     ///
     /// The orb's size is a CSS custom property, exactly as in the original, and
     /// under `prefers-reduced-motion: reduce` the stylesheet's transition is
@@ -281,14 +300,41 @@ impl App {
             .style()
             .set_property(PROP_PROGRESS, &format!("{}%", phase.progress_percent))
             .ok();
+        self.ring
+            .style()
+            .set_property(PROP_RING_COLOUR, phase_colour(phase.kind))
+            .ok();
+        let holding = matches!(phase.kind, PhaseKind::HoldIn | PhaseKind::HoldOut);
+        self.ring
+            .set_attribute(ATTR_HOLDING, if holding { "true" } else { "false" })
+            .ok();
         self.orb
             .style()
-            .set_property(PROP_PHASE_COLOR, phase_colour(phase.name))
+            .set_property(PROP_PHASE_COLOR, phase_colour(phase.kind))
             .ok();
         self.orb
             .style()
             .set_property(PROP_ORB_SCALE, &phase.orb_scale.to_string())
             .ok();
+    }
+
+    /// Mark each hold box as in use or switched off.
+    ///
+    /// Purely a presentation detail, and one that earns its place: a `0` in a
+    /// box looks the same whether it is a deliberate "no hold here" or a value
+    /// nobody has touched yet. The dimmed state and the word "off" in the label
+    /// make the difference visible, which is what lets the boxes sit on screen
+    /// at all rather than hiding behind a "show advanced" toggle — this app is
+    /// meant to be calm, and a toggle that hides the pattern is not.
+    fn sync_hold_fields(&self, settings: Settings) {
+        for (field, seconds) in [
+            (&self.hold_in_field, settings.hold_after_inhale_seconds),
+            (&self.hold_out_field, settings.hold_after_exhale_seconds),
+        ] {
+            field
+                .set_attribute(ATTR_ACTIVE, if seconds > 0 { "true" } else { "false" })
+                .ok();
+        }
     }
 
     /// The validation sentence for the current pattern.
@@ -306,7 +352,9 @@ impl App {
         let focused = self.document.active_element();
         let pairs = [
             (&self.inhale_input, settings.inhale_seconds),
+            (&self.hold_in_input, settings.hold_after_inhale_seconds),
             (&self.exhale_input, settings.exhale_seconds),
+            (&self.hold_out_input, settings.hold_after_exhale_seconds),
         ];
         for (input, seconds) in pairs {
             if focused.as_ref() != Some(input.as_ref()) {
@@ -413,8 +461,43 @@ impl App {
 enum Field {
     /// The inhale box.
     Inhale,
+    /// The hold-after-inhale box.
+    HoldIn,
     /// The exhale box.
     Exhale,
+    /// The hold-after-exhale box.
+    HoldOut,
+}
+
+impl Field {
+    /// The element this field is bound to.
+    fn element<'a>(&self, app: &'a App) -> &'a HtmlInputElement {
+        match self {
+            Self::Inhale => &app.inhale_input,
+            Self::HoldIn => &app.hold_in_input,
+            Self::Exhale => &app.exhale_input,
+            Self::HoldOut => &app.hold_out_input,
+        }
+    }
+
+    /// The duration this field sets, read from its own box.
+    ///
+    /// `None` means the box was empty, and the caller leaves that duration
+    /// alone: a box being typed into must not freeze the pattern, which is the
+    /// original's behaviour and the friendlier one.
+    fn read(&self, app: &App) -> Option<u32> {
+        parse_whole_seconds(&self.element(app).value())
+    }
+
+    /// Adopt a duration read from this field.
+    fn write(&self, app: &mut Settings, seconds: u32) {
+        match self {
+            Self::Inhale => app.inhale_seconds = seconds,
+            Self::HoldIn => app.hold_after_inhale_seconds = seconds,
+            Self::Exhale => app.exhale_seconds = seconds,
+            Self::HoldOut => app.hold_after_exhale_seconds = seconds,
+        }
+    }
 }
 
 /// Fetch one element by id, or fail the whole start with a clear message.

@@ -1,7 +1,7 @@
 # breath
 
-Breath: a paced-breathing pacer. Inhale for 3–10 seconds, exhale for 3–12, and
-a ring and orb keep the count. All of it — the phase, the pacing, the
+Breath: a paced-breathing pacer. Inhale, hold, exhale, hold — up to four
+phases in a cycle — and a ring and orb keep the count. All of it — the phase, the pacing, the
 validation, the audio cue, the persistence — is Rust. `cargo build` generates
 the **static PWA** into `./dist`: a front-end-only site any file host can
 serve, with no server and no runtime dependency on a binary.
@@ -115,6 +115,65 @@ derives `icon-192.png` and `icon-512.png` from it with `usvg`/`resvg`, and those
 PNGs are build output that is never committed. The SVG itself is *also* copied
 into `dist/`, because the shell asks for it as the favicon and the worker
 precaches it — see the trap below.
+
+## The four phases
+
+A cycle is **inhale → hold → exhale → hold**. Either hold may be zero, and both
+being zero reproduces the two-phase app exactly: same phases, same formulae, same
+ring, same pace. `both_holds_off_reproduces_the_two_phase_app_exactly` asserts
+that at every tenth of a second of a 4/6 cycle rather than assuming it, because
+this is the one guarantee that must not break silently.
+
+Four decisions were open. Each is recorded here with its reasoning, because each
+could reasonably have gone the other way.
+
+**1. The two original rules measure the breath, not the pattern.** "At least 8
+seconds per breath" and "exhale no more than twice the inhale" were both written
+when the cycle *was* the breath. Reading them against the total cycle instead
+would turn the 8-second floor into a floor on the whole pattern, and would let a
+20-second hold satisfy a rule about how long a breath is — so a 3+3 pattern with
+a hold would "pass" for the wrong reason. Both now apply to inhale-plus-exhale
+alone, via `moving_seconds()`. Every two-phase pattern therefore validates
+exactly as it did, and the only rules a hold can newly fail are the three new
+ones. The pace readout does the opposite, and deliberately: it uses the **full**
+cycle, because a held breath is not a breath. Box breathing reads "3.8
+breaths/min", which is correct and is the point of the feature.
+
+**2. Hold range: zero, or 1–20 seconds; and at most twice the inhale.** Zero is
+never an error — it is the two-phase pattern, and it has to stay reachable
+without clearing a box. Twenty seconds is the working ceiling of breath-hold
+practice. The ratio needed the most thought, because two readings disagree:
+`hold <= inhale` is what box breathing actually prescribes, but it makes 4-4-4-4
+— the most widely prescribed retention pattern there is — *unreachable*, since a
+4-second hold would be the cap and the inhale is also 4. Two-to-one keeps box
+breathing available and still bounds the hold to a third of a 15-second cycle.
+Both holds are measured against the **inhale**, not the exhale: a hold is not a
+kind of exhale, and with nothing else to compare against the exhale would be the
+only candidate.
+
+**3. A hold gets its own colour and one note of its own.** Reusing the inhale
+tone was the cheap option and it is wrong — a hold after the exhale would sound
+exactly like the inhale about to follow, which is the one moment where telling
+them apart matters most. The hold tone is 587 Hz, a third above the exhale and a
+fourth below the inhale, so the three are heard as one scale; both holds share
+it, because from the inside they are the same instruction: wait. The hold
+*colour* is a desaturated slate that is neither of the moving colours, so "I am
+not breathing right now" is visible without reading the label.
+
+**4. A hold is the absence of movement.** The orb holds the size the movement
+before it left — full after an inhale, at rest after an exhale — and does not
+drift. The ring keeps its own behaviour: full and parked through the top hold,
+and closing from full back to empty through the bottom hold so the next inhale
+begins at full rather than snapping one. That is what keeps a four-phase cycle
+reading as one continuous arc instead of four sweeps;
+`the_ring_is_one_continuous_arc_across_a_full_cycle` samples it densely to prove
+it. `data-holding` tells the stylesheet to drop the orb's size easing, because
+under `prefers-reduced-motion` an orb easing between two sizes it is not
+visiting reads as a drift rather than as stillness.
+
+Verified in a browser, not just in unit tests: all four phases screenshotted in
+both themes, and the cues read out of `AudioParam.setValueAtTime` across a full
+16-second box cycle — 740/1480, 587/1174, 392/784, 587/1174, 740/1480.
 
 ## Tests
 

@@ -105,9 +105,84 @@ fn the_shell_carries_every_element_the_rust_expects() {
         "exhale-input",
         "validation-message",
         "sound-button",
+        // The two holds, and the labels whose "off" state Rust marks.
+        "hold-in-input",
+        "hold-out-input",
+        "hold-in-field",
+        "hold-out-field",
     ] {
         assert!(page.contains(&format!("id=\"{id}\"")), "missing #{id}");
     }
+}
+
+/// The holds are a first-class part of the pattern, so they are as visible and
+/// as reachable as the inhale and the exhale — not tucked behind a disclosure
+/// that would hide the very thing box breathing is.
+#[test]
+fn the_two_holds_are_visible_and_accept_zero() {
+    let page = shell();
+
+    for id in ["hold-in-input", "hold-out-input"] {
+        let tag = tag_containing(&page, &format!("id=\"{id}\""))
+            .unwrap_or_else(|| panic!("no tag for #{id}"));
+        assert!(
+            tag.contains("type=\"number\""),
+            "#{id} must be a number box: {tag}"
+        );
+        // Zero is a real setting, so the floor is 0 and not 1. Anything else
+        // makes "no hold" unreachable without clearing the field, which is the
+        // mistake this test exists to prevent.
+        assert!(
+            tag.contains("min=\"0\""),
+            "#{id} must accept 0, since a hold of zero means off: {tag}"
+        );
+        assert!(tag.contains("max=\"20\""), "#{id} must cap at 20: {tag}");
+    }
+
+    // Both are marked so Rust can dim them when they are off.
+    for id in ["hold-in-field", "hold-out-field"] {
+        let tag = tag_containing(&page, &format!("id=\"{id}\""))
+            .unwrap_or_else(|| panic!("no tag for #{id}"));
+        assert!(
+            tag.contains("data-active="),
+            "#{id} must carry the state Rust marks: {tag}"
+        );
+        assert!(tag.contains("class=\"hold\""), "#{id} must be a hold box");
+    }
+
+    // The ring must be able to say "holding" by itself.
+    assert!(
+        page.contains("data-holding"),
+        "the ring must carry the hold state the stylesheet keys off"
+    );
+    assert!(
+        page.contains("--phase-colour"),
+        "the ring must be painted per phase, not in one fixed colour"
+    );
+}
+
+/// The first `<…>` run containing `needle`, for asserting on a single tag.
+fn tag_containing<'a>(page: &'a str, needle: &str) -> Option<&'a str> {
+    let mut depth = 0usize;
+    let mut open = 0usize;
+    for (index, character) in page.char_indices() {
+        match character {
+            '<' => {
+                if depth == 0 {
+                    open = index;
+                }
+                depth += 1;
+            }
+            '>' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 && page[open..index + 1].contains(needle) {
+                    return Some(&page[open..index + 1]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// The pacer is for people who are, quite literally, trying to relax. The
@@ -661,4 +736,151 @@ fn the_storage_key_is_still_the_original_apps() {
         pacer.contains("\"breath-pwa-settings-v3\""),
         "the storage key must not change: it is every existing user's pattern"
     );
+}
+
+/// No user-visible text may name the implementation.
+///
+/// A person using this app is trying to relax. Text that says how the app is
+/// built — "Rust", "WebAssembly", "wasm", "bindings", "compile" — is addressed to
+/// a maintainer, not to them, and the one person guaranteed to read the
+/// `<noscript>` is someone whose browser is already failing them.
+///
+/// The scope is the hard part. This must reach only what a reader can *see*, and
+/// the shell is mostly a stylesheet whose comments explain exactly which
+/// properties Rust writes and which media queries the stylesheet owns. That
+/// documentation is correct, valuable, and must survive — so `<style>` and
+/// `<script>` are removed wholesale rather than parsed, and HTML comments are
+/// stripped. What remains is element text plus the title and description.
+#[test]
+fn no_user_visible_text_names_the_implementation() {
+    let rendered = rendered_text(&shell());
+
+    for word in [
+        "rust",
+        "webassembly",
+        "wasm",
+        "bindings",
+        "compile",
+        "compiled",
+    ] {
+        assert!(
+            !rendered.to_lowercase().contains(word),
+            "{word:?} reaches the reader of the interface:\n{rendered}"
+        );
+    }
+
+    // The loader's own strings are prose a reader sees, even though the code
+    // around them is not — so they are checked here, extracted, rather than
+    // exempted along with the rest of the script. `JavaScript` is deliberately
+    // *not* on the list: in a `<noscript>` fallback it is the one term that
+    // names the actual blocker, and no reader can act on "the application
+    // layer" or "this page's scripts" as clearly as they can act on the word
+    // their browser settings are labelled with.
+    for string in string_literals(&shell()) {
+        let lowered = string.to_lowercase();
+        for word in ["rust", "webassembly", "wasm", "bindings", "compile"] {
+            assert!(
+                !lowered.contains(word),
+                "{word:?} appears in page text: {string:?}"
+            );
+        }
+    }
+}
+
+/// The shell with everything a reader cannot see as prose removed: the
+/// stylesheet, the script body, and every comment.
+fn rendered_text(page: &str) -> String {
+    let mut trimmed = remove_block(page, "<style", "</style>");
+    trimmed = remove_block(&trimmed, "<script", "</script>");
+    let without_comments = strip_comments(&trimmed);
+
+    let mut kept: Vec<String> = vec![without_comments.replace(['<', '>'], " ")];
+    for line in kept.iter_mut() {
+        let mut single = String::with_capacity(line.len());
+        let mut spaces = 0;
+        for character in line.chars() {
+            if character.is_whitespace() {
+                spaces += 1;
+                continue;
+            }
+            if spaces > 0 && !single.is_empty() {
+                single.push(' ');
+            }
+            spaces = 0;
+            single.push(character);
+        }
+        *line = single;
+    }
+    for chunk in page.split("<meta").skip(1) {
+        let Some(end) = chunk.find('>') else { continue };
+        let tag = &chunk[..end];
+        if tag.contains("name=\"description\"") {
+            if let (Some(start), Some(stop)) = (tag.find("content=\""), tag.rfind("\"")) {
+                kept.push(tag[start + "content=\"".len()..stop].to_string());
+            }
+        }
+    }
+    kept.retain(|piece| !piece.trim().is_empty());
+    kept.join("\n")
+}
+
+/// The document with one element's contents removed, tags included.
+fn remove_block(page: &str, open: &str, close: &str) -> String {
+    let mut out = String::with_capacity(page.len());
+    let mut rest = page;
+    while let Some(start) = rest.find(open) {
+        let (before, tail) = rest.split_at(start);
+        out.push_str(before);
+        match tail.find(close) {
+            Some(end) => rest = &tail[end + close.len()..],
+            None => return out,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The document with every comment removed, in either syntax.
+fn strip_comments(page: &str) -> String {
+    let mut out = page.to_string();
+    for (open, close) in [("<!--", "-->"), ("/*", "*/")] {
+        while let Some(start) = out.find(open) {
+            let end = match out[start..].find(close) {
+                Some(end) => start + end + close.len(),
+                None => out.len(),
+            };
+            out.replace_range(start..end, " ");
+        }
+    }
+    out
+}
+
+/// Every single-quoted string literal inside the page's script, which is where
+/// this shell's user-facing prose lives.
+///
+/// Scoped to the script deliberately: run over the whole document the scan pairs
+/// an apostrophe in a *comment* with one far away in real markup, and returns a
+/// "literal" that is mostly a stylesheet. Comments are documentation and are
+/// checked by neither this nor [`rendered_text`].
+fn string_literals(page: &str) -> Vec<String> {
+    let script = match page.split_once("<script") {
+        Some((_, rest)) => match rest.split_once("</script>") {
+            Some((body, _)) => body,
+            None => return Vec::new(),
+        },
+        None => return Vec::new(),
+    };
+    let mut found = Vec::new();
+    let mut rest = script;
+    while let Some(open) = rest.find('\'') {
+        let tail = &rest[open + 1..];
+        match tail.find('\'') {
+            Some(close) => {
+                found.push(tail[..close].to_string());
+                rest = &tail[close + 1..];
+            }
+            None => break,
+        }
+    }
+    found
 }
