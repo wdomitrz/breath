@@ -37,13 +37,21 @@ js-sys = "0.3.105"
 # service worker is registered -- and `web-sys` gates even that property behind
 # the feature, although no browser has ever lacked it.
 #
+# `ServiceWorker`, `RegistrationOptions` and `Url` are here for one fix: the
+# scope the worker is registered for is stated rather than inherited, and a
+# wider registration left behind by an earlier version is unregistered. Both
+# need the registration's `active()` worker (`ServiceWorker`, for
+# `script_url`) and the URL type; `Location` is `Window::location`, which is how
+# the app's own directory is resolved on the page side.
+#
 # Deliberately absent: `MediaQueryList`. `prefers-color-scheme` and
 # `prefers-reduced-motion` are handled in the shell's CSS, exactly as the
 # original CSS did, so Rust never asks the media-query values.
 web-sys = { version = "0.3.105", features = [
   "Window", "Document", "Element", "Node", "HtmlElement", "HtmlInputElement",
   "HtmlButtonElement", "Event", "EventTarget", "Performance", "Storage",
-  "CssStyleDeclaration", "ServiceWorkerContainer", "ServiceWorkerRegistration", "Navigator",
+  "CssStyleDeclaration", "ServiceWorkerContainer", "ServiceWorkerRegistration",
+  "ServiceWorker", "RegistrationOptions", "Location", "Url", "Navigator",
   "AudioContext", "AudioContextState", "OscillatorNode", "OscillatorType",
   "GainNode", "AudioScheduledSourceNode",
   "AudioParam", "AudioNode", "AudioDestinationNode",
