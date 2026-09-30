@@ -1,0 +1,7 @@
+target/
+# Build output of `breath`. Written by the two-step build documented in
+# AGENTS.md — `wasm-bindgen` writes the two wasm artefacts into `dist/`, then
+# `build.rs` publishes the rest of the site — and reproducible from the
+# committed sources. Never committed: a committed build is a build that rots
+# silently, shipping a pacer that predates the code that produced it.
+dist/

@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A simple paced breathing PWA for calm, conscious breathing sessions."
+    />
+    <meta name="theme-color" content="#0f766e" />
+    <title>Breath</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <style>
+      /* The author's original style.css, inline. `build.rs` copies this file
+         into `dist/index.html` byte for byte, so an external stylesheet would
+         be a second file in `dist/`, a second request, and a second thing the
+         service worker has to keep alive for no gain.
+
+         Two things Rust does not touch, and must not: the light and dark
+         palettes and the reduced-motion rule. `prefers-color-scheme` is
+         honoured here rather than read from Rust, because the orb is coloured
+         by the custom property `var(--phase-color)`, which resolves against
+         whichever set of values the stylesheet has in force. */
+      :root {
+        color-scheme: light dark;
+        --inhale: #0f766e;
+        --exhale: #d97706;
+        --progress: #7d8b84;
+        --background: #fbfaf7;
+        --surface-muted: #e7eee9;
+        --border: #d9ddd8;
+        --text: #17212b;
+        --muted: #5f6b73;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        min-height: 100%;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        background: var(--background);
+        color: var(--text);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      input:focus-visible {
+        outline: 3px solid #2563eb;
+        outline-offset: 3px;
+      }
+
+      /* Kept from the original: a click on a number box should not select the
+         label or start a drag, and the boxes are the only thing a user taps
+         repeatedly while breathing. */
+      button,
+      input {
+        touch-action: manipulation;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .app-shell {
+        width: min(100% - 32px, 560px);
+        min-height: 100vh;
+        margin: 0 auto;
+        display: grid;
+        gap: 20px;
+        align-items: center;
+        padding: 32px 0;
+      }
+
+      .pacer {
+        display: grid;
+        gap: 22px;
+        justify-items: center;
+        padding-top: 16px;
+        text-align: center;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .metrics span,
+      .validation-message {
+        color: var(--muted);
+      }
+
+      .breath-stage {
+        min-height: 300px;
+        display: grid;
+        place-items: center;
+      }
+
+      .breath-ring {
+        width: min(70vw, 300px);
+        aspect-ratio: 1;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle, var(--background) 0 40%, transparent 41%),
+          conic-gradient(
+            from -90deg,
+            var(--progress) var(--phase-progress, 0%),
+            var(--surface-muted) 0
+          );
+      }
+
+      .breath-orb {
+        width: 48%;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at 32% 28%, rgb(255 255 255 / 65%), transparent 24%),
+          var(--phase-color, var(--inhale));
+        transform: scale(var(--orb-scale, 0.74));
+        transition:
+          transform 160ms linear,
+          background-color 160ms linear;
+      }
+
+      .phase-label {
+        font-size: 2rem;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+
+      .sound-button {
+        min-height: 40px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        padding: 8px 18px;
+      }
+
+      /* The button reports "Sound enabled" and stops accepting clicks, so it
+         has to look like it. Not a change from the original's behaviour, only
+         from its absence of a style. */
+      .sound-button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 28px;
+        width: 100%;
+        text-align: center;
+      }
+
+      .metrics div {
+        min-width: 0;
+      }
+
+      .metrics > div > span,
+      .metrics strong {
+        display: block;
+      }
+
+      .metrics > div > span {
+        margin-bottom: 4px;
+        font-size: 0.78rem;
+      }
+
+      .metrics strong {
+        overflow-wrap: anywhere;
+        font-size: 1rem;
+        font-weight: 650;
+      }
+
+      .pattern-inputs {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        gap: 8px;
+        align-items: end;
+      }
+
+      .pattern-separator {
+        color: var(--progress);
+        font-size: 1.35rem;
+        line-height: 40px;
+      }
+
+      label {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+        color: var(--muted);
+        font-size: 0.72rem;
+      }
+
+      input {
+        width: 100%;
+        min-height: 40px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text);
+        padding: 8px;
+        text-align: center;
+      }
+
+      .validation-message {
+        min-height: 1.4em;
+        font-size: 0.9rem;
+      }
+
+      @media (max-width: 820px) {
+        .app-shell {
+          align-items: start;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .app-shell {
+          width: min(100% - 20px, 1040px);
+          padding: 12px 0;
+          gap: 12px;
+        }
+
+        .pacer {
+          padding-inline: 0;
+        }
+
+        .breath-stage {
+          min-height: 220px;
+        }
+
+        .phase-label {
+          font-size: 1.75rem;
+        }
+
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* The orb stops easing and snaps between the values Rust writes. Nothing
+         else moves on this page, so this is the whole of the reduced-motion
+         treatment — the same rule, and the same reason, as the original. */
+      @media (prefers-reduced-motion: reduce) {
+        .breath-orb {
+          transition: none;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --inhale: #2dd4bf;
+          --exhale: #f59e0b;
+          --progress: #8d9a93;
+          --background: #121714;
+          --surface-muted: #26312d;
+          --border: #3a4742;
+          --text: #f4f7f5;
+          --muted: #b8c3be;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="pacer" aria-label="Breathing pacer">
+        <div class="breath-stage" aria-hidden="true">
+          <div id="breath-ring" class="breath-ring">
+            <div id="breath-orb" class="breath-orb"></div>
+          </div>
+        </div>
+
+        <div class="readout" role="status" aria-live="polite">
+          <p id="phase-label" class="phase-label">Inhale</p>
+        </div>
+
+        <div class="metrics" aria-label="Session details">
+          <div>
+            <span>Pattern</span>
+            <div class="pattern-inputs">
+              <label>
+                <span>Inhale</span>
+                <input
+                  id="inhale-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="3"
+                  max="10"
+                  step="1"
+                  autocomplete="off"
+                />
+              </label>
+              <span class="pattern-separator" aria-hidden="true">·</span>
+              <label>
+                <span>Exhale</span>
+                <input
+                  id="exhale-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="3"
+                  max="12"
+                  step="1"
+                  autocomplete="off"
+                />
+              </label>
+            </div>
+          </div>
+          <div>
+            <span>Pace</span>
+            <strong id="pace-label">6 breaths/min</strong>
+          </div>
+        </div>
+
+        <!-- One live region, kept in the DOM and emptied rather than hidden:
+             a region that is removed stops being announced, so a pattern
+             corrected back to valid would leave the old sentence on screen for
+             a screen reader. Rust sets this to "" the moment the pattern is
+             valid again. -->
+        <p id="validation-message" class="validation-message" role="status" aria-live="polite"></p>
+
+        <button id="sound-button" class="sound-button" type="button">
+          Enable sound
+        </button>
+      </section>
+    </main>
+    <noscript>Breath needs JavaScript enabled to load the Rust WebAssembly application.</noscript>
+    <script type="module">
+      import('./app.js').then(m => m.default()).catch(error => { document.getElementById('phase-label').textContent = '—'; const message = document.createElement('p'); message.className = 'validation-message'; message.setAttribute('role', 'alert'); message.textContent = 'Could not load the breathing pacer. Reload the page or check your connection. ' + error; document.querySelector('.pacer').append(message); });
+    </script>
+  </body>
+</html>
