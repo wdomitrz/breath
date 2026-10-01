@@ -237,17 +237,64 @@ jobs:
             || { echo "::error::the page does not load the generated bindings"; exit 1; }
           # The manifest is assembled by build.rs, so a shape that drifted from
           # the spec is caught here rather than by a launcher refusing it.
+          #
+          # `theme_color` is asserted ABSENT, deliberately. A manifest cannot
+          # express a colour scheme variant, and Chrome for Android prefers the
+          # manifest's value over the shell's per-scheme <meta name="theme-color">
+          # tags — so naming one colour here would pin every installer's status
+          # bar to a single scheme and silently override both. The shell owns the
+          # two, and the last three assertions below prove it declares one per
+          # scheme, so this is not the absence of a check but the opposite one.
+          # `tests/shell.rs` asserts the same invariant against build.rs; this
+          # asserts it against the artefact that actually ships.
           python3 - <<'PY'
-          import json
+          import json, re
           manifest = json.load(open('dist/manifest.webmanifest'))
           for key in ('id', 'start_url', 'scope'):
               assert manifest[key] == './', f'{key} must be relative, got {manifest[key]!r}'
           assert manifest['name'] == 'Breath', 'the name must be preserved'
           assert manifest['short_name'] == 'Breath', 'the short name must be preserved'
-          assert manifest['theme_color'] == '#0f766e', 'the theme colour must be the original one'
-          assert manifest['background_color'] == '#f6f2ea', 'the background must be the original one'
+          assert 'theme_color' not in manifest, (
+              'a manifest theme_color cannot follow the scheme and would '
+              'override the shell\'s per-scheme meta tags')
+          # The splash cannot follow a scheme either, so it is the one surface
+          # where a fixed colour is free: it must be the dark one, or a light
+          # splash flashes against the dark page the app actually opens in.
+          assert manifest['background_color'] == '#0f1117', (
+              'the splash background must be the dark page background, got '
+              f"{manifest['background_color']!r}")
           sizes = sorted(icon['sizes'] for icon in manifest['icons'])
           assert sizes == ['192x192', '512x512'], f'unexpected icon sizes {sizes}'
+
+          # The shell must actually declare a theme colour for BOTH schemes, or
+          # dropping the manifest's one leaves an installed app with no status
+          # bar colour at all and the omission above buys nothing. The meta tags
+          # carry the two backgrounds the page is painted in, which is what makes
+          # this a check on the manifest's replacement rather than on two tags
+          # that could drift to any colour and still pass.
+          page = open('dist/index.html').read()
+          # (scheme, colour), so the scheme is the key: the pair order is the
+          # regex's, and getting it backwards keys a dict by colour, which
+          # passes a page declaring one colour per scheme and fails one that is
+          # correct.
+          declared = {
+              scheme: colour
+              for colour, scheme in re.findall(
+                  r'<meta name="theme-color" content="(#[0-9a-fA-F]{6})"'
+                  r' media="\(prefers-color-scheme: (dark|light)\)"', page)}
+          assert set(declared) == {'dark', 'light'}, (
+              'the page must declare a theme colour per scheme, got '
+              f'{sorted(declared)}')
+          assert declared['dark'] == '#0f1117', (
+              f"the dark scheme's status bar must match the dark background, "
+              f"got {declared['dark']!r}")
+          assert declared['light'] == '#f5f6f8', (
+              f"the light scheme's status bar must match the light background, "
+              f"got {declared['light']!r}")
+          # And the page must really be painted in those two backgrounds, so the
+          # status bar cannot match a page it does not share a colour with.
+          for token in ('--bg: #0f1117', '--bg: #f5f6f8'):
+              assert token in page, f'the page must define {token}'
           PY
 
       - name: Run the tests
