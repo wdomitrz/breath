@@ -638,6 +638,36 @@ fn dist_is_ignored() {
     assert!(ignored, "dist/ must be in .gitignore");
 }
 
+/// Every path a release leaves behind must be ignored, not just the ones a
+/// build produces.
+///
+/// `.release-recovery/` is the one this repository had wrong. It is written by
+/// the release machinery on every successful release, so before it was ignored
+/// `git status` reported master as permanently dirty after every release — a
+/// directory full of journals, archived rather than deleted, that nobody
+/// reviews and that `git add -A` would happily commit. The `dist_is_ignored`
+/// test above cannot catch that: it only knows about the one path it names, so
+/// a new one is invisible until it has already been committed once.
+///
+/// This asks git directly rather than reading `.gitignore`, so a negated or
+/// scoped rule (`dist/*` but not `dist/keep-me`, say) cannot pass by containing
+/// the right word.
+#[test]
+fn every_path_a_release_leaves_behind_is_ignored() {
+    if tracked_files().is_none() {
+        return; // not a checkout
+    }
+    for path in ["dist/", ".release-recovery/"] {
+        let ignored = std::process::Command::new("git")
+            .args(["check-ignore", "-q", path])
+            .current_dir(root())
+            .status()
+            .expect("git check-ignore")
+            .success();
+        assert!(ignored, "{path} must be in .gitignore");
+    }
+}
+
 /// The repository is a Rust crate and a static shell, not a Rust crate with a
 /// dead copy of the previous JavaScript app still in it.
 ///
