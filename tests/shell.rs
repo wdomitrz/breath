@@ -36,6 +36,27 @@ fn shell() -> String {
         .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()))
 }
 
+/// The shell's inline `<style>` block, and nothing else.
+///
+/// Assertions about what the *stylesheet* says — that a media query exists, that
+/// a custom property is defined — have to be scoped to it. A whole-document
+/// search is satisfied by a `meta` tag, an HTML comment or an attribute that
+/// merely mentions the same words, so it goes green with the rule deleted. This
+/// returns the CSS alone, so a deleted rule cannot hide behind a mention of it.
+///
+/// Panics if there is no style block, which is itself a failure worth naming:
+/// every rule below lives in one.
+fn style_of(page: &str) -> String {
+    let open = page
+        .find("<style")
+        .unwrap_or_else(|| panic!("the shell must carry an inline <style> block:\n{page}"));
+    let body = open + page[open..].find('>').expect("a closed <style> tag");
+    let close = page[body..]
+        .find("</style>")
+        .unwrap_or_else(|| panic!("an unclosed <style> block:\n{page}"));
+    page[body + 1..body + close].to_string()
+}
+
 /// Tracked file names, or `None` outside a checkout.
 ///
 /// The release gate exports the candidate as a bare directory with no `.git`,
@@ -206,11 +227,15 @@ fn the_shell_is_accessible_and_honours_the_original_media_queries() {
     );
     assert!(page.contains("<label"), "the duration inputs are labelled");
     assert!(page.contains("focus-visible"), "focus must be visible");
-    for query in [
-        "prefers-reduced-motion: reduce",
-        "prefers-color-scheme: dark",
-    ] {
-        assert!(page.contains(query), "{query} must be respected");
+    // Asserted against the stylesheet, not the whole document: `prefers-color-
+    // scheme` also appears in the two per-scheme `<meta name="theme-color">`
+    // tags, so a whole-document search passes even with the media query deleted
+    // — which is the case this is here to prevent. The dark palette is the
+    // default block rather than a `prefers-color-scheme: dark` query, so the
+    // query that must exist is the light override.
+    let style = style_of(&page);
+    for query in ["prefers-reduced-motion: reduce", "prefers-color-scheme: light"] {
+        assert!(style.contains(query), "{query} must be respected in the CSS");
     }
     // The orb's reduced-motion rule is the original's: no transition, so the
     // value Rust writes is the value shown.
@@ -808,26 +833,59 @@ fn the_committed_icon_is_one_svg_and_the_source_of_the_pngs() {
 
 /// The manifest is assembled by `build.rs`, not committed, so there is no
 /// committed copy to assert. What can be asserted is that the constants it is
-/// assembled from are the original app's, and that nothing in the shell pins a
-/// different theme colour than the manifest publishes.
+/// assembled from are the ones the page is actually painted in, and that the two
+/// cannot drift apart.
+///
+/// This used to pin the original app's teal and cream. It no longer does, and
+/// the reason is the invariant worth keeping: an installed app's status bar is
+/// painted from a single `theme_color`, and a manifest cannot express a colour
+/// scheme variant. Naming one colour here would quietly override the two
+/// per-scheme `<meta>` tags the shell declares and pin every installer's bar to
+/// whichever scheme that colour happened to suit. So the manifest declares no
+/// `theme_color` at all, and what is asserted here is the absence — plus that
+/// the splash background is the dark one, since a splash cannot follow a scheme
+/// either and a light splash flashes against the dark page behind it.
 #[test]
-fn the_manifest_keeps_the_original_apps_colours_and_name() {
+fn the_manifest_declares_no_theme_color_and_the_shell_owns_both_schemes() {
     let build = std::fs::read_to_string(root().join("build.rs")).expect("build.rs");
-    for value in ["\"#0f766e\"", "\"#f6f2ea\"", "\"standalone\""] {
+    let code = strip_rust_comments(&build);
+    assert!(
+        !code.contains("theme_color"),
+        "a manifest theme_color cannot follow the scheme and would override the shell's"
+    );
+    for value in ["\"#0f1117\"", "\"standalone\""] {
         assert!(
-            build.contains(value),
-            "the manifest must publish {value} from the original manifest.json"
+            code.contains(value),
+            "the manifest must publish {value}"
         );
     }
     let page = shell();
-    assert!(
-        page.contains("content=\"#0f766e\""),
-        "the page's theme-color must match the manifest's"
-    );
+    // Both schemes, and both carrying the background the page is actually
+    // painted in — one per scheme, or an installed app's bar is a foreign
+    // colour until the reader changes their phone.
+    for scheme in ["dark", "light"] {
+        assert!(
+            page.contains(&format!(
+                "content=\"#0f1117\" media=\"(prefers-color-scheme: {scheme})\""
+            ))
+            || page.contains(&format!(
+                "content=\"#f5f6f8\" media=\"(prefers-color-scheme: {scheme})\""
+            )),
+            "the shell must declare a theme colour for the {scheme} scheme"
+        );
+    }
+    // The two theme colours are the family's, and the page draws the same two
+    // backgrounds under the same two names.
+    for token in ["#0f1117", "#f5f6f8"] {
+        assert!(
+            page.contains(token),
+            "the shell must paint itself in {token}, the theme colour it declares"
+        );
+    }
     // `id`, `start_url` and `scope` are `"./"` in build.rs so the site mounts
     // anywhere; a stray absolute path would pin it to one host.
     assert!(
-        build.contains("\"start_url\": \"./\""),
+        code.contains("\"start_url\": \"./\""),
         "start_url must be relative"
     );
 }
@@ -989,4 +1047,36 @@ fn string_literals(page: &str) -> Vec<String> {
         }
     }
     found
+}
+
+/// `build.rs` with every comment removed.
+///
+/// `theme_color` is the reason this exists. That word belongs in a comment
+/// explaining *why* the manifest omits the key, and a test asserting the key is
+/// absent then fails on the explanation. The same trap the rest of this file
+/// documents for the shell: an assertion about code must not be satisfied by a
+/// comment about the code.
+///
+/// A line comment runs to the end of the line and a block comment to its closer.
+/// A `//` inside a string literal is not a comment, but no string these tests
+/// search for contains one, and a full Rust tokenizer is not worth the
+/// complexity to guard against it.
+fn strip_rust_comments(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut rest = source;
+    while let Some(start) = rest.find('/') {
+        let after = &rest[start + 1..];
+        if let Some(tail) = after.strip_prefix("//") {
+            out.push_str(&rest[..start]);
+            rest = tail.split_once('\n').map_or("", |(_, line)| line);
+        } else if let Some(tail) = after.strip_prefix("/*") {
+            out.push_str(&rest[..start]);
+            rest = tail.split_once("*/").map_or("", |(_, line)| line);
+        } else {
+            out.push_str(&rest[..=start]);
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
 }

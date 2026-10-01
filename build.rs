@@ -53,8 +53,12 @@ const ICON_SVG: &str = "assets/icon.svg";
 
 /// Preserved verbatim from the app's original `manifest.json`.
 const APP_NAME: &str = "Breath";
-const THEME_COLOR: &str = "#0f766e";
-const BACKGROUND_COLOR: &str = "#f6f2ea";
+
+/// `background_color` only ever colours the splash screen, which is shown for a
+/// moment and cannot be scheme-aware, so it is the one surface where a fixed
+/// value costs nothing and a light one flashes against the dark page the app
+/// actually opens in.
+const BACKGROUND_COLOR: &str = "#0f1117";
 
 fn main() {
     let root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
@@ -196,6 +200,12 @@ fn rasterize_icon(svg: &Path, size: u32) -> Vec<u8> {
 /// The web app manifest, assembled so its icon list matches [`ICON_SIZES`].
 ///
 /// `id`, `start_url` and `scope` are all `"./"` so the site mounts anywhere.
+///
+/// `theme_color` is deliberately **absent**, and that is not an oversight.
+/// Chrome for Android prefers a manifest `theme_color` over the per-scheme
+/// `<meta name="theme-color" media=...>` tags the shell declares, and a manifest
+/// cannot express a scheme variant — so naming one here would pin the installed
+/// app's status bar to a single scheme and quietly override both of them.
 fn manifest() -> String {
     let icons: Vec<serde_json::Value> = ICON_SIZES
         .iter()
@@ -216,7 +226,6 @@ fn manifest() -> String {
         "scope": "./",
         "display": "standalone",
         "background_color": BACKGROUND_COLOR,
-        "theme_color": THEME_COLOR,
         "icons": icons,
     })
     .to_string()

@@ -11,7 +11,12 @@
       name="description"
       content="A paced breathing timer for calm, conscious breathing sessions. Set an inhale and an exhale in seconds, follow the ring, and hear a tone at each change of phase."
     />
-    <meta name="theme-color" content="#0f766e" />
+    <!-- Two theme colours, one per scheme, so an installed app's status bar is
+         never a light bar on a dark page or the reverse until the user changes
+         their phone. The manifest deliberately carries no scheme variant it
+         cannot express, so these are what paint the browser's own chrome. -->
+    <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
     <title>Breath</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
@@ -22,25 +27,55 @@
          be a second file in `dist/`, a second request, and a second thing the
          service worker has to keep alive for no gain.
 
-         Two things Rust does not touch, and must not: the light and dark
-         palettes and the reduced-motion rule. `prefers-color-scheme` is
-         honoured here rather than read from Rust, because the orb is coloured
-         by the custom property `var(--phase-color)`, which resolves against
-         whichever set of values the stylesheet has in force. */
+         The greys are borrowed verbatim from the server this app is served
+         beside, so a page opened from the same origin does not look like a
+         different product. The names are that project's tokens unchanged: a page
+         restyled later reuses them instead of inventing a second set of
+         near-identical greys.
+
+         Dark is the default and light is the override, which is the reverse of
+         the `color-scheme: light dark` convention, and deliberate for the
+         reason `pwa_template` gives: `color-scheme` names the scheme the page
+         is *drawn* in, and a reader who has chosen nothing gets the one this
+         app was designed in.
+
+         Three things Rust does not touch, and must not: the light and dark
+         palettes, the reduced-motion rule, and the three phase colours.
+         `prefers-color-scheme` is honoured here rather than read from Rust,
+         because the orb is coloured by the custom property
+         `var(--phase-color)`, which resolves against whichever set of values the
+         stylesheet has in force.
+
+         The phase colours are the one part of this palette that is this app's
+         own. Inhale and exhale must stay distinguishable at a glance and hold
+         must read as neither, so they cannot be folded into the neutral greys:
+         these three are the interface. They are tuned for contrast against
+         `--bg` in both schemes rather than carried over from the original's
+         teal, which sat far too close to this background to work here. */
       :root {
-        color-scheme: light dark;
-        --inhale: #0f766e;
-        --exhale: #d97706;
-        /* A hold is neither colour. Deliberately desaturated and lighter than
-           both moving phases, so "not breathing right now" is visible without
-           reading the label. */
-        --hold: #64748b;
-        --progress: #7d8b84;
-        --background: #fbfaf7;
-        --surface-muted: #e7eee9;
-        --border: #d9ddd8;
-        --text: #17212b;
-        --muted: #5f6b73;
+        color-scheme: dark;
+        --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+          sans-serif;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+          monospace;
+        --bg: #0f1117;
+        --surface: #171a23;
+        --surface2: #20242f;
+        --input-bg: #12141b;
+        --fg: #e4e7ec;
+        --muted: #8d94a3;
+        --accent: #5fd38a;
+        --accent-fg: #0c1a12;
+        --link: #79b8ff;
+        --border: #2b303c;
+        --danger: #ef6a6a;
+        /* A hold is neither colour: desaturated, and lighter than the two
+           moving phases, so "not breathing right now" is visible without
+           reading the label. The inhale and exhale are the same green and amber
+           as the original, only lightened for a dark background. */
+        --inhale: #34d399;
+        --exhale: #fbbf24;
+        --hold: #94a3b8;
       }
 
       * {
@@ -53,50 +88,57 @@
 
       body {
         min-height: 100vh;
-        margin: 0;
-        background: var(--background);
-        color: var(--text);
-        font-family:
-          Inter,
-          ui-sans-serif,
-          system-ui,
-          -apple-system,
-          BlinkMacSystemFont,
-          "Segoe UI",
-          sans-serif;
+        margin: 0 auto;
+        max-width: 46rem;
+        padding: 0 .75rem;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--font);
+        font-size: 13.5px;
+        line-height: 1.4;
       }
 
       button,
       input {
         font: inherit;
+        touch-action: manipulation;
       }
 
       button:focus-visible,
       input:focus-visible {
-        outline: 3px solid #2563eb;
+        outline: 3px solid var(--link);
         outline-offset: 3px;
-      }
-
-      /* Kept from the original: a click on a number box should not select the
-         label or start a drag, and the boxes are the only thing a user taps
-         repeatedly while breathing. */
-      button,
-      input {
-        touch-action: manipulation;
       }
 
       button {
         cursor: pointer;
       }
 
+      /* The title, set the way every other page on this origin sets its own:
+         a small, semibold `h1`. The ring below it is the interface, so the
+         title is a quiet label at the top rather than a display heading — and
+         it is what tells an installed app which of seven on this origin is
+         open. */
+      .app-title {
+        margin: 0;
+        text-align: center;
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--fg);
+      }
+
+      /* The app is one column of controls, so it is centred on bot's own
+         measure rather than on a width invented here — 46rem is what every
+         other page on this origin is set to, and a narrower column would make
+         this page look like a different product at the same window size. */
       .app-shell {
-        width: min(100% - 32px, 560px);
+        width: min(100%, 34rem);
         min-height: 100vh;
         margin: 0 auto;
         display: grid;
-        gap: 20px;
+        gap: 16px;
         align-items: center;
-        padding: 32px 0;
+        padding: 24px 0 32px;
       }
 
       .pacer {
@@ -141,11 +183,11 @@
         place-items: center;
         border-radius: 50%;
         background:
-          radial-gradient(circle, var(--background) 0 40%, transparent 41%),
+          radial-gradient(circle, var(--bg) 0 40%, transparent 41%),
           conic-gradient(
             from -90deg,
             var(--phase-colour, var(--inhale)) var(--phase-progress, 0%),
-            var(--surface-muted) 0
+            var(--surface2) 0
           );
       }
 
@@ -170,20 +212,39 @@
           background-color 160ms linear;
       }
 
+      /* The phase is the one word on this page worth shouting, so it is the one
+         thing set larger than the surrounding type. Its weight matches the
+         `h1` the other apps set their titles at, so the two read as the same
+         kind of heading. */
       .phase-label {
-        font-size: 2rem;
-        font-weight: 700;
-        line-height: 1.1;
+        font-size: 1.6rem;
+        font-weight: 600;
+        line-height: 1.2;
       }
 
+      /* A quiet, bordered control — the same shape every other button on this
+         origin has, rather than the original's bare outlined pill. */
       .sound-button {
         min-height: 40px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--fg);
+        background: var(--surface2);
         border: 1px solid var(--border);
-        border-radius: 999px;
-        background: transparent;
-        color: var(--text);
+        border-radius: 0.5rem;
+        padding: 0.28rem 0.9rem;
         cursor: pointer;
-        padding: 8px 18px;
+        transition:
+          background 0.15s,
+          border-color 0.15s;
+      }
+
+      .sound-button:hover {
+        border-color: var(--muted);
+      }
+
+      .sound-button:active {
+        filter: brightness(0.9);
       }
 
       /* The button reports "Sound enabled" and stops accepting clicks, so it
@@ -194,16 +255,24 @@
         cursor: default;
       }
 
+      /* The session details, in one panel rather than two loose columns: bot draws
+         every block of related fields the same way — a `--surface` box with a
+         `--border` rule and a `.6rem` radius — so a reader who has used one page
+         on this origin already knows what this one is. */
       .metrics {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 28px;
+        grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+        gap: 14px;
         width: 100%;
-        text-align: center;
       }
 
-      .metrics div {
+      .metrics > div {
         min-width: 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 0.6rem;
+        padding: 10px 12px 12px;
+        text-align: center;
       }
 
       .metrics > div > span,
@@ -211,15 +280,21 @@
         display: block;
       }
 
+      /* The panel's heading: the same small, spaced, muted label bot sets on
+         every section, so it reads as a section name and not as a caption. */
       .metrics > div > span {
-        margin-bottom: 4px;
-        font-size: 0.78rem;
+        margin-bottom: 8px;
+        font-size: 0.68rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
       }
 
       .metrics strong {
         overflow-wrap: anywhere;
         font-size: 1rem;
-        font-weight: 650;
+        font-weight: 600;
       }
 
       /* Four boxes, in the order the cycle runs: inhale, hold, exhale, hold.
@@ -286,15 +361,26 @@
         font-size: 0.72rem;
       }
 
+      /* The number boxes carry the same field styling as every other input on
+         this origin: a filled `--input-bg` panel inside the `--surface` box it
+         sits in, so the four read as fields in a panel rather than as four
+         floating outlines on the page background. */
       input {
         width: 100%;
         min-height: 44px;
+        font-size: 0.82rem;
+        font-family: var(--mono);
+        color: var(--fg);
+        background: var(--input-bg);
         border: 1px solid var(--border);
-        border-radius: 8px;
-        background: transparent;
-        color: var(--text);
+        border-radius: 0.5rem;
         padding: 8px;
         text-align: center;
+      }
+
+      input:focus {
+        outline: none;
+        border-color: var(--accent);
       }
 
       .validation-message {
@@ -310,8 +396,7 @@
 
       @media (max-width: 560px) {
         .app-shell {
-          width: min(100% - 20px, 1040px);
-          padding: 12px 0;
+          padding: 16px 0;
           gap: 12px;
         }
 
@@ -324,7 +409,7 @@
         }
 
         .phase-label {
-          font-size: 1.75rem;
+          font-size: 1.4rem;
         }
 
         .metrics {
@@ -349,23 +434,32 @@
         }
       }
 
-      @media (prefers-color-scheme: dark) {
+      @media (prefers-color-scheme: light) {
         :root {
-          --inhale: #2dd4bf;
-          --exhale: #f59e0b;
-          --hold: #94a3b8;
-          --progress: #8d9a93;
-          --background: #121714;
-          --surface-muted: #26312d;
-          --border: #3a4742;
-          --text: #f4f7f5;
-          --muted: #b8c3be;
+          color-scheme: light;
+          --bg: #f5f6f8;
+          --surface: #ffffff;
+          --surface2: #e9ebee;
+          --input-bg: #ffffff;
+          --fg: #20242b;
+          --muted: #5b6270;
+          --accent: #0b8a4e;
+          --accent-fg: #ffffff;
+          --link: #0a5bd3;
+          --border: #d8dce2;
+          --danger: #c23434;
+          /* The darker halves of the original's phase palette, which are the
+             ones legible against a light background. */
+          --inhale: #0f766e;
+          --exhale: #b45309;
+          --hold: #64748b;
         }
       }
     </style>
   </head>
   <body>
     <main class="app-shell">
+      <h1 class="app-title">Breath</h1>
       <section class="pacer" aria-label="Breathing pacer">
         <div class="breath-stage" aria-hidden="true">
           <div id="breath-ring" class="breath-ring">
