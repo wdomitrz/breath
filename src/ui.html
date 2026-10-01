@@ -212,14 +212,24 @@
           background-color 160ms linear;
       }
 
-      /* The phase is the one word on this page worth shouting, so it is the one
-         thing set larger than the surrounding type. Its weight matches the
-         `h1` the other apps set their titles at, so the two read as the same
-         kind of heading. */
+      /* The phase is the one word on this page worth shouting, so it is the one thing
+         set larger than the surrounding type.
+
+         Its size is not the `h1`'s, and matching that was a mistake worth
+         recording. This label is read while looking *at the ring*, at arm's
+         length and half a pace from where the eyes already are — the user is
+         following their breath, not reading a page. It was 2rem and it stays
+         near there: shrinking it to 1.6rem to agree with the title this app
+         carries at the top cost legibility exactly where it matters, to buy a
+         consistency no one was asking about. The title agrees with the other
+         apps; this does not, because it is not doing the title's job.
+
+         The weight does match: 600 is what every other heading here wears, and
+         weight is the part that reads as the same hand at a glance. */
       .phase-label {
-        font-size: 1.6rem;
+        font-size: 1.9rem;
         font-weight: 600;
-        line-height: 1.2;
+        line-height: 1.15;
       }
 
       /* A quiet, bordered control — the same shape every other button on this
@@ -409,7 +419,7 @@
         }
 
         .phase-label {
-          font-size: 1.4rem;
+          font-size: 1.65rem;
         }
 
         .metrics {
