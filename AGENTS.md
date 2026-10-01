@@ -162,14 +162,22 @@ not breathing right now" is visible without reading the label.
 
 **4. A hold is the absence of movement.** The orb holds the size the movement
 before it left — full after an inhale, at rest after an exhale — and does not
-drift. The ring keeps its own behaviour: full and parked through the top hold,
-and closing from full back to empty through the bottom hold so the next inhale
-begins at full rather than snapping one. That is what keeps a four-phase cycle
-reading as one continuous arc instead of four sweeps;
-`the_ring_is_one_continuous_arc_across_a_full_cycle` samples it densely to prove
-it. `data-holding` tells the stylesheet to drop the orb's size easing, because
-under `prefers-reduced-motion` an orb easing between two sizes it is not
-visiting reads as a drift rather than as stillness.
+drift. The ring follows the same rule, which means a hold is motionless in its
+*entirety*, not just in the orb: the top hold parks the arc at full, the bottom
+hold leaves it at empty, and only the colour changes. This was not the first
+design. The bottom hold used to close the ring's arc, sweeping from full back
+to empty across its whole length, on the reasoning that four phases should read
+as one continuous sweep. That made the bottom hold the only phase in which the
+user watches a bar drain while being told to hold still, and a hold that empties
+the ring is a hold the eye reads as a slow exhale. The discontinuity it avoided
+is now paid instead at the top of the next inhale, where the empty ring meets
+its first sliver of fill — a smaller event, once per cycle, at the boundary the
+user is watching anyway. `data-holding` tells the stylesheet to drop the orb's
+size easing, because under `prefers-reduced-motion` an orb easing between two
+sizes it is not visiting reads as a drift rather than as stillness. The rule is
+asserted over every tenth of every hold, not at its endpoints, by
+`no_hold_moves_anything_on_the_dial`: a sweep is a thing that is *nearly* static
+at its ends, and sampling the ends is exactly how the old one got through.
 
 Verified in a browser, not just in unit tests: all four phases screenshotted in
 both themes, and the cues read out of `AudioParam.setValueAtTime` across a full

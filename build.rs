@@ -160,6 +160,16 @@ fn cache_version(built: &[(String, Vec<u8>)], worker_template: &str) -> String {
 /// The scale is `f32`: `resvg` takes a `tiny_skia::Transform`, whose fields are
 /// `f32`, so computing the ratio as `f64` does not compile. `tiny-skia` must
 /// stay on `0.12` to match `resvg 0.48`.
+///
+/// The one cast clippy objects to is allowed, and narrowly: `f32` has no
+/// `From<u32>`, so an `as f32` is the only spelling available, and widening
+/// `size` through `f64` first to satisfy the lint would buy nothing — the
+/// conversion is lossy in the general case and *not* lossy here, because
+/// `size` is one of two constants far below the 2^24 point where `u32` stops
+/// being exactly representable, and the divisor is an SVG user-unit length the
+/// icon sets to a small integer. Both operands are therefore exact, and the
+/// scale the renderer receives is bit-for-bit what it always was.
+#[allow(clippy::cast_precision_loss)]
 fn rasterize_icon(svg: &Path, size: u32) -> Vec<u8> {
     let data =
         std::fs::read(svg).unwrap_or_else(|error| panic!("reading {}: {error}", svg.display()));

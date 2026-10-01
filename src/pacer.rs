@@ -288,6 +288,14 @@ impl Settings {
     /// exhale. A hold is the absence of movement, so the orb stands still and
     /// only its colour changes — which is legible at a glance in a way a slowly
     /// drifting size is not.
+    ///
+    /// The ring follows the same rule, and both holds take the state the
+    /// movement before them ended on: full through the top hold, empty through
+    /// the bottom one. So during either hold the entire figure is motionless and
+    /// only the colour says a hold is happening. Between an inhale and an exhale
+    /// the ring is still one continuous arc — the exhale sweeps it back to
+    /// empty rather than filling a second time — and the only discontinuity
+    /// left is the empty ring meeting the first sliver of the next inhale.
     pub fn phase_at(&self, elapsed_ms: f64) -> Phase {
         let position = self.cycle_position_seconds(elapsed_ms);
         let mut remaining = position;
@@ -331,11 +339,28 @@ impl Settings {
         remaining -= exhale;
 
         // Hold after the exhale: the orb is steady and at rest, and the ring
-        // completes its sweep rather than sitting at an empty 0%.
+        // stays empty — which is what the exhale left it.
+        //
+        // It used to close the arc here, sweeping from full back to empty
+        // across the hold, on the reasoning that a four-phase cycle should read
+        // as one continuous sweep. That was the one place the ring moved during
+        // a hold, and it made the bottom hold the only phase in which the user
+        // watches a bar drain while being told to hold still — a hold that
+        // empties the ring is a hold the eye reads as a slow exhale. Holding
+        // still now means the whole figure is still: the orb at rest and the
+        // ring at empty, both of which is what the exhale ends with.
+        //
+        // The cost is honest and is paid at the top of the next inhale, where
+        // the ring goes from empty to its first sliver of fill. That snap was
+        // previously paid by the hold instead, spread over its whole length, and
+        // it is the lesser one: it happens once per cycle, at the boundary the
+        // user is already watching for the next breath to start, and a sliver
+        // appearing is a far smaller visual event than a bar quietly draining
+        // for four seconds while the label says "Hold".
         let hold_out = f64::from(self.hold_after_exhale_seconds);
-        if hold_out > 0.0 && remaining < hold_out {
+        if remaining < hold_out {
             return Phase {
-                progress_percent: 100.0 * (1.0 - ratio(remaining, hold_out)),
+                progress_percent: 0.0,
                 orb_scale: Phase::ORB_MIN,
                 ..Phase::HOLD_OUT
             };
@@ -1069,6 +1094,18 @@ mod tests {
         }
     }
 
+    /// Coherent breathing with a bottom hold: 5 in, 7 out, 4 s held at the
+    /// bottom and no hold at the top — the commonest real pattern where the
+    /// bottom hold is the only one, and the one that must not sweep either.
+    fn bottom_hold_only() -> Settings {
+        Settings {
+            inhale_seconds: 5,
+            hold_after_inhale_seconds: 0,
+            exhale_seconds: 7,
+            hold_after_exhale_seconds: 4,
+        }
+    }
+
     #[test]
     fn both_holds_off_reproduces_the_two_phase_app_exactly() {
         // The backwards-compatibility guarantee, asserted rather than assumed.
@@ -1210,7 +1247,10 @@ mod tests {
             "and does not drift during it"
         );
 
-        // Hold after the exhale: at rest, and still at rest.
+        // Hold after the exhale: at rest, and still at rest. The ring is empty
+        // for the whole of it, which is what the exhale ended on — so during
+        // this hold nothing on the dial moves, and the only thing that changes
+        // is the colour.
         let bottom_early = settings.phase_at(12_500.0);
         let bottom_late = settings.phase_at(15_500.0);
         assert_eq!(bottom_early.kind, PhaseKind::HoldOut);
@@ -1219,6 +1259,75 @@ mod tests {
             "held at rest"
         );
         assert!((bottom_early.orb_scale - bottom_late.orb_scale).abs() < 1e-9);
+        assert!(
+            (bottom_early.progress_percent - 0.0).abs() < 1e-9,
+            "the ring is empty through the second hold"
+        );
+        assert!(
+            (bottom_late.progress_percent - 0.0).abs() < 1e-9,
+            "and does not drift during it"
+        );
+    }
+
+    /// Every part of the dial a hold touches must be frozen for the whole hold.
+    ///
+    /// This is the test the bottom hold failed when it was still closing the
+    /// ring's arc: the orb held, and the ring drained from full to empty over
+    /// the four seconds the user was being told to hold still. The property is
+    /// stated over the whole window rather than at two instants on purpose — a
+    /// sweep is a thing that is *nearly* static at its endpoints, so sampling
+    /// the boundaries is what let it through.
+    #[test]
+    fn no_hold_moves_anything_on_the_dial() {
+        for settings in [boxed(), bottom_hold_only()] {
+            // `phase_at` takes milliseconds, so every window below is computed
+            // in seconds and converted once here.
+            let ms_per_second = 1000.0;
+            let holds = [
+                (
+                    PhaseKind::HoldIn,
+                    f64::from(settings.inhale_seconds),
+                    f64::from(settings.hold_after_inhale_seconds),
+                ),
+                (
+                    PhaseKind::HoldOut,
+                    f64::from(
+                        settings.inhale_seconds
+                            + settings.hold_after_inhale_seconds
+                            + settings.exhale_seconds,
+                    ),
+                    f64::from(settings.hold_after_exhale_seconds),
+                ),
+            ];
+            for (kind, start, len) in holds {
+                if len == 0.0 {
+                    continue; // a hold that is off has no window to freeze
+                }
+                let start = start * ms_per_second;
+                let len = len * ms_per_second;
+                // Sample strictly inside the window: the far end belongs to
+                // whatever follows the hold. The near end is kept, because the
+                // boundary is the instant the movement before it ended, and that
+                // is precisely the state the hold is required to hold.
+                let held = settings.phase_at(start + len / 2.0 + 1.0);
+                assert_eq!(held.kind, kind, "start={start} len={len}");
+                for tenth in 0..(len / 100.0) as u32 {
+                    let now = settings.phase_at(start + f64::from(tenth) * 100.0);
+                    assert_eq!(
+                        now.kind, kind,
+                        "wrong phase at +{tenth} tenth(s) of a {len} ms hold"
+                    );
+                    assert!(
+                        (now.orb_scale - held.orb_scale).abs() < 1e-9,
+                        "the orb moved during {kind:?} at +{tenth} tenth(s)"
+                    );
+                    assert!(
+                        (now.progress_percent - held.progress_percent).abs() < 1e-9,
+                        "the ring moved during {kind:?} at +{tenth} tenth(s)"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -1242,15 +1351,15 @@ mod tests {
         assert_eq!(settings.phase_at(15_999.0).name, "Hold");
         assert_eq!(settings.phase_at(16_000.0).name, "Inhale");
 
-        // The final hold is one second, and it closes the ring's arc from empty
-        // back to full — so the next inhale starts at a full ring rather than
-        // snapping one.
+        // The one-second bottom hold holds the ring where the exhale left it,
+        // which is empty — the hold does not close the arc, so the next inhale
+        // does not start at a full ring.
         assert!(
-            (settings.phase_at(15_000.0).progress_percent - 100.0).abs() < 1e-9,
-            "the last hold begins with the ring full"
+            (settings.phase_at(15_000.0).progress_percent - 0.0).abs() < 1e-9,
+            "the last hold begins with the ring empty"
         );
         assert!(
-            settings.phase_at(15_999.0).progress_percent < 1.0,
+            (settings.phase_at(15_999.0).progress_percent - 0.0).abs() < 1e-9,
             "and ends with it empty"
         );
 
@@ -1270,23 +1379,41 @@ mod tests {
 
     #[test]
     fn the_ring_is_one_continuous_arc_across_a_full_cycle() {
-        // Sampled densely, the ring must never jump backwards during the moving
-        // phases, and must return to full exactly where the next inhale begins.
-        // This is the property that makes four phases read as one breath.
+        // Sampled densely, the ring must never jump backwards while it is
+        // filling, and must return to where it started exactly where the next
+        // inhale begins. This is the property that makes the moving halves of a
+        // four-phase cycle read as one breath.
+        //
+        // The ring's *fall* now happens only in the exhale; both holds park it.
+        // The test used to exempt the bottom hold from the no-backwards rule
+        // precisely because that hold was sweeping, so this is where the change
+        // shows: the exemption is gone and the exhale is the only falling phase.
         let settings = boxed();
-        let mut previous = settings.phase_at(0.0).progress_percent;
+        // The comparison is made *within* a phase rather than between the sample
+        // before and the sample now, and that is the whole point. A between-
+        // sample comparison has to tolerate one step's worth of the exhale's
+        // rate, because a sample ten milliseconds before the boundary is in the
+        // exhale and the next is in the hold — and a tolerance that size will
+        // quietly swallow a slow drain inside a hold, which is precisely the
+        // regression this change is about. (It did: a hold draining a fifth of
+        // the ring passed a version of this test that allowed the slack.)
+        // Within a phase there is no boundary to straddle, so the tolerance is
+        // exact and nothing can hide in it.
+        //
+        // The exhale is the only phase that may fall, and both holds park the
+        // ring: the test used to exempt the bottom hold from the no-backwards
+        // rule because that hold was sweeping, and the exemption is now gone.
+        let mut previous = settings.phase_at(0.0);
         for step in 1..1600 {
-            let at = f64::from(step) * 10.0;
-            let now = settings.phase_at(at).progress_percent;
-            // The ring falls through the exhale and through the *bottom* hold,
-            // which is how its arc closes before the next inhale. It only ever
-            // rises during the inhale and the top hold.
-            let phase = settings.phase_at(at);
-            let falling = phase.kind == PhaseKind::Exhale || phase.kind == PhaseKind::HoldOut;
-            if !falling {
+            let now = settings.phase_at(f64::from(step) * 10.0);
+            if now.kind == previous.kind && now.kind != PhaseKind::Exhale {
                 assert!(
-                    now >= previous - 1e-9,
-                    "the ring must not fall while filling: {now} after {previous} at {at} ms"
+                    now.progress_percent >= previous.progress_percent - 1e-9,
+                    "the ring fell inside {:?}: {} after {} at {} ms",
+                    now.kind,
+                    now.progress_percent,
+                    previous.progress_percent,
+                    f64::from(step) * 10.0
                 );
             }
             previous = now;
