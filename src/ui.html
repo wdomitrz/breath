@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- The description is read by search engines and shown as the link text's
+         blurb, so it is written for someone deciding whether to open the page.
+         "PWA" is a term for developers and installers, not for the people this
+         line is for. -->
+    <meta
+      name="description"
+      content="A paced breathing timer for calm, conscious breathing sessions. Set an inhale and an exhale in seconds, follow the ring, and hear a tone at each change of phase."
+    />
+    <!-- Two theme colours, one per scheme, so an installed app's status bar is
+         never a light bar on a dark page or the reverse until the user changes
+         their phone. The manifest deliberately carries no scheme variant it
+         cannot express, so these are what paint the browser's own chrome. -->
+    <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
+    <title>Breath</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <style>
+      /* The author's original style.css, inline. `build.rs` copies this file
+         into `dist/index.html` byte for byte, so an external stylesheet would
+         be a second file in `dist/`, a second request, and a second thing the
+         service worker has to keep alive for no gain.
+
+         The greys are borrowed verbatim from the server this app is served
+         beside, so a page opened from the same origin does not look like a
+         different product. The names are that project's tokens unchanged: a page
+         restyled later reuses them instead of inventing a second set of
+         near-identical greys.
+
+         Dark is the default and light is the override, which is the reverse of
+         the `color-scheme: light dark` convention, and deliberate for the
+         reason `pwa_template` gives: `color-scheme` names the scheme the page
+         is *drawn* in, and a reader who has chosen nothing gets the one this
+         app was designed in.
+
+         Three things Rust does not touch, and must not: the light and dark
+         palettes, the reduced-motion rule, and the three phase colours.
+         `prefers-color-scheme` is honoured here rather than read from Rust,
+         because the orb is coloured by the custom property
+         `var(--phase-color)`, which resolves against whichever set of values the
+         stylesheet has in force.
+
+         The phase colours are the one part of this palette that is this app's
+         own. Inhale and exhale must stay distinguishable at a glance and hold
+         must read as neither, so they cannot be folded into the neutral greys:
+         these three are the interface. They are tuned for contrast against
+         `--bg` in both schemes rather than carried over from the original's
+         teal, which sat far too close to this background to work here. */
+      :root {
+        color-scheme: dark;
+        --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+          sans-serif;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+          monospace;
+        --bg: #0f1117;
+        --surface: #171a23;
+        --surface2: #20242f;
+        --input-bg: #12141b;
+        --fg: #e4e7ec;
+        --muted: #8d94a3;
+        --accent: #5fd38a;
+        --accent-fg: #0c1a12;
+        --link: #79b8ff;
+        --border: #2b303c;
+        --danger: #ef6a6a;
+        /* A hold is neither colour: desaturated, and lighter than the two
+           moving phases, so "not breathing right now" is visible without
+           reading the label. The inhale and exhale are the same green and amber
+           as the original, only lightened for a dark background. */
+        --inhale: #34d399;
+        --exhale: #fbbf24;
+        --hold: #94a3b8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        min-height: 100%;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0 auto;
+        max-width: 46rem;
+        padding: 0 .75rem;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--font);
+        font-size: 13.5px;
+        line-height: 1.4;
+      }
+
+      button,
+      input {
+        font: inherit;
+        touch-action: manipulation;
+      }
+
+      button:focus-visible,
+      input:focus-visible {
+        outline: 3px solid var(--link);
+        outline-offset: 3px;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      /* The title, set the way every other page on this origin sets its own:
+         a small, semibold `h1`. The ring below it is the interface, so the
+         title is a quiet label at the top rather than a display heading — and
+         it is what tells an installed app which of seven on this origin is
+         open. */
+      .app-title {
+        margin: 0;
+        text-align: center;
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--fg);
+      }
+
+      /* The app is one column of controls, so it is centred on bot's own
+         measure rather than on a width invented here — 46rem is what every
+         other page on this origin is set to, and a narrower column would make
+         this page look like a different product at the same window size. */
+      .app-shell {
+        width: min(100%, 34rem);
+        min-height: 100vh;
+        margin: 0 auto;
+        display: grid;
+        gap: 16px;
+        align-items: center;
+        padding: 24px 0 32px;
+      }
+
+      .pacer {
+        display: grid;
+        gap: 22px;
+        justify-items: center;
+        padding-top: 16px;
+        text-align: center;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .metrics span,
+      .validation-message {
+        color: var(--muted);
+      }
+
+      .breath-stage {
+        min-height: 300px;
+        display: grid;
+        place-items: center;
+      }
+
+      /* The progress ring.
+
+         `--phase-progress` is how much of the circle the current phase has
+         swept, and it is painted in `--phase-colour`, which Rust sets per phase.
+         So the ring says *which phase* by its own colour, not only through the
+         label under it: a teal arc is filling, an amber arc is emptying, and a
+         slate arc — present only during a hold — is parked.
+
+         A hold does not sweep, it sits — neither hold, and nothing on the dial
+         moves during either. The top hold parks the arc at full, the bottom
+         hold leaves it at empty, which is where the exhale ended. So a hold is
+         motionless in its entirety and only the colour says a hold is happening. */
+      .breath-ring {
+        width: min(70vw, 300px);
+        aspect-ratio: 1;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle, var(--bg) 0 40%, transparent 41%),
+          conic-gradient(
+            from -90deg,
+            var(--phase-colour, var(--inhale)) var(--phase-progress, 0%),
+            var(--surface2) 0
+          );
+      }
+
+      /* A hold is the absence of movement, so the orb must not ease into it:
+         under reduced motion it snaps, which is what makes a stationary orb
+         read as stationary rather than as a slow drift nobody can see. The
+         colour is still transitioned, because that transition is the cue. */
+      .breath-ring[data-holding="true"] .breath-orb {
+        transition: background-color 160ms linear;
+      }
+
+      .breath-orb {
+        width: 48%;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at 32% 28%, rgb(255 255 255 / 65%), transparent 24%),
+          var(--phase-color, var(--inhale));
+        transform: scale(var(--orb-scale, 0.74));
+        transition:
+          transform 160ms linear,
+          background-color 160ms linear;
+      }
+
+      /* The phase is the one word on this page worth shouting, so it is the one thing
+         set larger than the surrounding type.
+
+         Its size is not the `h1`'s, and matching that was a mistake worth
+         recording. This label is read while looking *at the ring*, at arm's
+         length and half a pace from where the eyes already are — the user is
+         following their breath, not reading a page. It was 2rem and it stays
+         near there: shrinking it to 1.6rem to agree with the title this app
+         carries at the top cost legibility exactly where it matters, to buy a
+         consistency no one was asking about. The title agrees with the other
+         apps; this does not, because it is not doing the title's job.
+
+         The weight does match: 600 is what every other heading here wears, and
+         weight is the part that reads as the same hand at a glance. */
+      .phase-label {
+        font-size: 1.9rem;
+        font-weight: 600;
+        line-height: 1.15;
+      }
+
+      /* A quiet, bordered control — the same shape every other button on this
+         origin has, rather than the original's bare outlined pill. */
+      .sound-button {
+        min-height: 40px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--fg);
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 0.28rem 0.9rem;
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          border-color 0.15s;
+      }
+
+      .sound-button:hover {
+        border-color: var(--muted);
+      }
+
+      .sound-button:active {
+        filter: brightness(0.9);
+      }
+
+      /* The button reports "Sound enabled" and stops accepting clicks, so it
+         has to look like it. Not a change from the original's behaviour, only
+         from its absence of a style. */
+      .sound-button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+
+      /* The session details, in one panel rather than two loose columns: bot draws
+         every block of related fields the same way — a `--surface` box with a
+         `--border` rule and a `.6rem` radius — so a reader who has used one page
+         on this origin already knows what this one is. */
+      .metrics {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+        gap: 14px;
+        width: 100%;
+      }
+
+      .metrics > div {
+        min-width: 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 0.6rem;
+        padding: 10px 12px 12px;
+        text-align: center;
+      }
+
+      .metrics > div > span,
+      .metrics strong {
+        display: block;
+      }
+
+      /* The panel's heading: the same small, spaced, muted label bot sets on
+         every section, so it reads as a section name and not as a caption. */
+      .metrics > div > span {
+        margin-bottom: 8px;
+        font-size: 0.68rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+
+      .metrics strong {
+        overflow-wrap: anywhere;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      /* Four boxes, in the order the cycle runs: inhale, hold, exhale, hold.
+
+         No separators. The dot that separated inhale from exhale in the
+         two-box version cannot survive a fourth item — a four-item sequence
+         around a fixed separator wraps into a 3×2 grid with the dot orphaned in
+         the last cell, which is both uglier and less clear than nothing at all.
+         The labels already name the phases in order, so the row teaches the
+         sequence on its own, and a row of four equal boxes reads as one
+         pattern rather than as two pairs.
+
+         The exhale box is set slightly wider because its allowed range is the
+         longest (3–12 against the inhale's 3–10 and the holds' 0–20), and an
+         even split makes the widest field the one with least room. */
+      .pattern-inputs {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1.2fr 1fr;
+        gap: 10px 8px;
+        align-items: end;
+      }
+
+      .pattern-caption {
+        grid-column: 1 / -1;
+        margin: 0 0 2px;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      /* A hold of zero is a valid, deliberate setting — "off" — so it gets a
+         visible resting state rather than looking like an unfilled field. The
+         label dims and the word "off" appears, which is also what tells a user
+         without reading anything that the box accepts zero on purpose. */
+      /* Both holds say "Hold", so the one at the bottom of a two-by-two grid is
+         ambiguous on a narrow screen. Naming them by position — which is also
+         how the app's own copy refers to them — removes the ambiguity without
+         adding a word to the wide layout, where the order already implies it. */
+      #hold-in-field span::after {
+        content: " · after in";
+      }
+
+      #hold-out-field span::after {
+        content: " · after out";
+      }
+
+      .hold[data-active="false"] input {
+        opacity: 0.5;
+      }
+
+      label {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+        color: var(--muted);
+        font-size: 0.72rem;
+      }
+
+      /* The number boxes carry the same field styling as every other input on
+         this origin: a filled `--input-bg` panel inside the `--surface` box it
+         sits in, so the four read as fields in a panel rather than as four
+         floating outlines on the page background. */
+      input {
+        width: 100%;
+        min-height: 44px;
+        font-size: 0.82rem;
+        font-family: var(--mono);
+        color: var(--fg);
+        background: var(--input-bg);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 8px;
+        text-align: center;
+      }
+
+      input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      .validation-message {
+        min-height: 1.4em;
+        font-size: 0.9rem;
+      }
+
+      @media (max-width: 820px) {
+        .app-shell {
+          align-items: start;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .app-shell {
+          padding: 16px 0;
+          gap: 12px;
+        }
+
+        .pacer {
+          padding-inline: 0;
+        }
+
+        .breath-stage {
+          min-height: 220px;
+        }
+
+        .phase-label {
+          font-size: 1.65rem;
+        }
+
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* Four boxes will not sit on one line at phone widths, so they pair up —
+         still in cycle order, reading down the left column then the right. */
+      @media (max-width: 430px) {
+        .pattern-inputs {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+      }
+
+      /* The orb stops easing and snaps between the values Rust writes. Nothing
+         else moves on this page, so this is the whole of the reduced-motion
+         treatment — the same rule, and the same reason, as the original. */
+      @media (prefers-reduced-motion: reduce) {
+        .breath-orb {
+          transition: none;
+        }
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --bg: #f5f6f8;
+          --surface: #ffffff;
+          --surface2: #e9ebee;
+          --input-bg: #ffffff;
+          --fg: #20242b;
+          --muted: #5b6270;
+          --accent: #0b8a4e;
+          --accent-fg: #ffffff;
+          --link: #0a5bd3;
+          --border: #d8dce2;
+          --danger: #c23434;
+          /* The darker halves of the original's phase palette, which are the
+             ones legible against a light background. */
+          --inhale: #0f766e;
+          --exhale: #b45309;
+          --hold: #64748b;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app-shell">
+      <h1 class="app-title">Breath</h1>
+      <section class="pacer" aria-label="Breathing pacer">
+        <div class="breath-stage" aria-hidden="true">
+          <div id="breath-ring" class="breath-ring">
+            <div id="breath-orb" class="breath-orb"></div>
+          </div>
+        </div>
+
+        <div class="readout" role="status" aria-live="polite">
+          <p id="phase-label" class="phase-label">Inhale</p>
+        </div>
+
+        <div class="metrics" aria-label="Session details">
+          <div>
+            <span>Pattern</span>
+            <div class="pattern-inputs">
+              <label>
+                <span>Inhale</span>
+                <input
+                  id="inhale-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="3"
+                  max="10"
+                  step="1"
+                  autocomplete="off"
+                />
+              </label>
+              <!-- A hold is a retention: the pause at the top of the inhale and
+                   at the bottom of the exhale. Zero is a real setting — it means
+                   the cycle has no hold in it — so the minimum is 0 and not 1,
+                   and the label says "off" when it is zero. -->
+              <label class="hold" id="hold-in-field" data-active="false">
+                <span>Hold</span>
+                <input
+                  id="hold-in-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  max="20"
+                  step="1"
+                  autocomplete="off"
+                />
+              </label>
+              <label>
+                <span>Exhale</span>
+                <input
+                  id="exhale-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="3"
+                  max="12"
+                  step="1"
+                  autocomplete="off"
+                />
+              </label>
+              <label class="hold" id="hold-out-field" data-active="false">
+                <span>Hold</span>
+                <input
+                  id="hold-out-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  max="20"
+                  step="1"
+                  autocomplete="off"
+                />
+              </label>
+            </div>
+          </div>
+          <div>
+            <span>Pace</span>
+            <strong id="pace-label">3 breaths/min</strong>
+          </div>
+        </div>
+
+        <!-- One live region, kept in the DOM and emptied rather than hidden:
+             a region that is removed stops being announced, so a pattern
+             corrected back to valid would leave the old sentence on screen for
+             a screen reader. Rust sets this to "" the moment the pattern is
+             valid again. -->
+        <p id="validation-message" class="validation-message" role="status" aria-live="polite"></p>
+
+        <button id="sound-button" class="sound-button" type="button">
+          Enable sound
+        </button>
+      </section>
+    </main>
+    <!-- Only ever seen by someone whose browser has scripting switched off, so
+         it has to say what they are missing rather than how the app is built.
+         Naming the implementation here would be worse than useless: the reader
+         cannot act on it, and it makes the one message this person sees sound
+         like a developer's note rather than an explanation. Same rule as
+         everywhere else in the interface — the pacing, the sound cues and the
+         saved settings are described by what they do, never by what they are
+         made of. -->
+    <noscript>Breath needs JavaScript to run. The paced breathing timer, the sound cues at each phase change, and your saved pattern are all handled in this page — with it switched off, none of them can.</noscript>
+    <!-- The loader, and the whole of the page's JavaScript. It does exactly two
+         things: start the app, and — if that fails — say so in the user's own
+         terms.
+
+         Note what is *not* here. The failure message does not append the caught
+         `error`: a thrown dynamic-import failure is a JavaScript TypeError
+         naming the module specifier and the protocol, which is engineering
+         vocabulary shown to someone who cannot act on it and reads as noise.
+         The detail belongs in the console, where a developer will look for it,
+         so the console gets it and the page does not. -->
+    <script type="module">
+      import('./app.js').then(m => m.default()).catch(error => { console.error(error); document.getElementById('phase-label').textContent = '—'; const message = document.createElement('p'); message.className = 'validation-message'; message.setAttribute('role', 'alert'); message.textContent = 'Breath could not start. Reload the page, or check your connection if it keeps happening.'; document.querySelector('.pacer').append(message); });
+    </script>
+  </body>
+</html>
