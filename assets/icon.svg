@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Breath. A paced-breathing pacer, so: the pacer's progress ring with the
+       orb inside it, and nothing else.
+
+       Redrawn for this rewrite — see AGENTS.md, "The icon" — as one ring and
+       one filled dot in a single colour on a transparent ground. `build.rs`
+       rasterizes the 192 and 512 install PNGs from this file, so this is the
+       icon and the PNGs are derived output. -->
+  <circle
+    fill="none"
+    stroke="#0f766e"
+    stroke-width="48"
+    cx="256"
+    cy="256"
+    r="190"
+  />
+  <circle fill="#0f766e" cx="256" cy="256" r="76" />
+</svg>

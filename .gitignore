@@ -1,0 +1,16 @@
+target/
+# Build output of `breath`. Written by the two-step build documented in
+# AGENTS.md — `wasm-bindgen` writes the two wasm artefacts into `dist/`, then
+# `build.rs` publishes the rest of the site — and reproducible from the
+# committed sources. Never committed: a committed build is a build that rots
+# silently, shipping a pacer that predates the code that produced it.
+dist/
+
+# Release recovery journals. They live inside the repository so a read-only
+# copy root cannot stop a release recording itself, and they are archived rather
+# than deleted, so the directory persists after a successful release. Without
+# this, every release leaves master permanently "dirty": the untracked directory
+# changes nothing a reviewer would look at, so it is easy to sweep into a commit
+# with `git add -A` and to mistake for a real working change. It has never been
+# committed here, but it is not a thing to rely on noticing.
+.release-recovery/
