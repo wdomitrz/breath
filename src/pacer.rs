@@ -114,16 +114,22 @@ pub struct Settings {
 }
 
 impl Settings {
-    /// The pattern the app starts from: four in, six out, six breaths a minute.
+    /// The pattern the app starts from: 4-7-8-1.
     ///
-    /// Both holds are zero, so this is byte-for-byte the pattern the two-phase
-    /// app always started in. Adding the holds must not quietly change anyone's
-    /// breathing.
+    /// Four in, seven held at the top, eight out, one held at the bottom —
+    /// twenty seconds, three breaths a minute. This is the longest exhale the
+    /// app accepts, so it is the one pattern that both uses the whole range and
+    /// is the recognisable "calm down" pattern rather than a box-breathing or a
+    /// sleep pattern. Choosing it as the default is a deliberate departure from
+    /// the two-phase 4-in/6-out the app shipped for years; the two-phase
+    /// pattern is still one keystroke away and is still what
+    /// [`PersistedSettings`] reads a stored two-key entry back as, so no
+    /// existing user's pattern changes — only what a first-time visitor sees.
     pub const DEFAULT: Self = Self {
         inhale_seconds: 4,
-        hold_after_inhale_seconds: 0,
-        exhale_seconds: 6,
-        hold_after_exhale_seconds: 0,
+        hold_after_inhale_seconds: 7,
+        exhale_seconds: 8,
+        hold_after_exhale_seconds: 1,
     };
 
     /// The width of one full breath, in seconds: all four phases.
@@ -736,17 +742,36 @@ mod tests {
     /// ring — and a millisecond of it is invisible on a 300 px dial.
     const EXACT_ENOUGH: f64 = 1e-9;
 
+    /// 4 in, 6 out: the two-phase pattern, written out rather than reached
+    /// through `Settings::DEFAULT`.
+    ///
+    /// It used to be the default, so a lot of tests reached for `DEFAULT` when
+    /// they wanted any simple valid pattern. Changing the default then broke
+    /// eleven of them at once, none of which were about the default — a test
+    /// that fails because the default moved is a test whose subject is
+    /// ambiguous. Tests about the default say `DEFAULT`; every other test says
+    /// which pattern it means.
+    fn plain() -> Settings {
+        Settings::moving(4, 6)
+    }
+
     #[test]
-    fn the_default_pattern_is_four_in_six_out() {
+    fn the_default_pattern_is_four_seven_eight_one() {
+        // 4-7-8-1: the calm-down pattern, and the only one that uses the
+        // widest exhale the app accepts.
         assert_eq!(Settings::DEFAULT.inhale_seconds, 4);
-        assert_eq!(Settings::DEFAULT.exhale_seconds, 6);
-        assert_eq!(Settings::DEFAULT.cycle_seconds(), 10);
+        assert_eq!(Settings::DEFAULT.hold_after_inhale_seconds, 7);
+        assert_eq!(Settings::DEFAULT.exhale_seconds, 8);
+        assert_eq!(Settings::DEFAULT.hold_after_exhale_seconds, 1);
+        assert_eq!(Settings::DEFAULT.cycle_seconds(), 20);
         assert!(Settings::DEFAULT.is_valid());
     }
 
     #[test]
-    fn a_ten_second_cycle_is_six_breaths_a_minute() {
-        assert_eq!(Settings::DEFAULT.pace_label(), "6 breaths/min");
+    fn a_twenty_second_cycle_is_three_breaths_a_minute() {
+        // The default is a 20 s cycle, so it opens at three breaths a minute —
+        // and that is a whole number, so the readout carries no decimal.
+        assert_eq!(Settings::DEFAULT.pace_label(), "3 breaths/min");
     }
 
     #[test]
@@ -754,7 +779,10 @@ mod tests {
         // 5 s and 5 s: exactly 12.
         let settings = Settings::moving(5, 5);
         assert_eq!(settings.cycle_seconds(), 10);
-        assert_eq!(Settings::DEFAULT.pace_label(), format_whole(6));
+        // The default happens to be a whole rate too, and is asserted here so
+        // the two "no trailing .0" cases are covered: an exact integer written
+        // plainly, and the same value reached from a different pattern.
+        assert_eq!(Settings::DEFAULT.pace_label(), format_whole(3));
         assert_eq!(settings.pace_label(), "6 breaths/min");
     }
 
@@ -771,7 +799,7 @@ mod tests {
 
     #[test]
     fn the_phase_opens_on_the_inhale() {
-        let settings = Settings::DEFAULT;
+        let settings = plain();
         let phase = settings.phase_at(0.0);
         assert_eq!(phase.name, "Inhale");
         assert_eq!(phase.progress_percent, 0.0);
@@ -780,7 +808,7 @@ mod tests {
 
     #[test]
     fn the_inhale_fills_the_ring_and_grows_the_orb() {
-        let settings = Settings::DEFAULT;
+        let settings = plain();
         let phase = settings.phase_at(2000.0);
         assert_eq!(phase.name, "Inhale");
         assert!((phase.progress_percent - 50.0).abs() < 1e-9);
@@ -789,7 +817,7 @@ mod tests {
 
     #[test]
     fn the_exhale_sweeps_the_ring_back_and_shrinks_the_orb() {
-        let settings = Settings::DEFAULT;
+        let settings = plain();
         // 7 s into a 4-in/6-out cycle is 3 s into a six-second exhale: half
         // way through it, so the ring has swept back to half and the orb is
         // halfway from full to resting.
@@ -806,7 +834,7 @@ mod tests {
 
     #[test]
     fn the_phase_changes_exactly_at_the_boundary() {
-        let settings = Settings::DEFAULT;
+        let settings = plain();
         // 3.999 s in is still the inhale; 4.000 s in is the exhale.
         assert_eq!(settings.phase_at(3999.0).name, "Inhale");
         assert_eq!(settings.phase_at(4000.0).name, "Exhale");
@@ -814,7 +842,7 @@ mod tests {
 
     #[test]
     fn the_cycle_repeats_without_drifting() {
-        let settings = Settings::DEFAULT;
+        let settings = plain();
         let close = |left: &Phase, right: &Phase| {
             assert_eq!(left.name, right.name);
             assert!(
@@ -862,12 +890,12 @@ mod tests {
     #[test]
     fn each_phase_cue_is_its_own_note() {
         assert_eq!(
-            Settings::DEFAULT.phase_at(0.0).cue_frequency(),
+            plain().phase_at(0.0).cue_frequency(),
             740.0,
             "inhale is 740 Hz"
         );
         assert_eq!(
-            Settings::DEFAULT.phase_at(5000.0).cue_frequency(),
+            plain().phase_at(5000.0).cue_frequency(),
             392.0,
             "exhale is 392 Hz"
         );
@@ -922,7 +950,7 @@ mod tests {
 
     #[test]
     fn a_restart_starts_the_cycle_from_its_first_beat() {
-        let mut pacer = Pacer::new(Settings::DEFAULT, 1000.0);
+        let mut pacer = Pacer::new(plain(), 1000.0);
         assert_eq!(pacer.phase_at(5000.0).name, "Exhale");
         pacer.restart(5000.0);
         assert_eq!(pacer.phase_at(5000.0).name, "Inhale");
@@ -931,7 +959,7 @@ mod tests {
 
     #[test]
     fn elapsed_never_runs_backwards() {
-        let pacer = Pacer::new(Settings::DEFAULT, 5000.0);
+        let pacer = Pacer::new(plain(), 5000.0);
         // A clock reading taken before the cycle began — which a coarse
         // `performance.now()` across a restore can produce — must not yield a
         // negative age and an inverted sweep.
@@ -1110,22 +1138,31 @@ mod tests {
     fn both_holds_off_reproduces_the_two_phase_app_exactly() {
         // The backwards-compatibility guarantee, asserted rather than assumed.
         // Every observable of the original at every instant of a 4/6 cycle.
-        let plain = Settings::DEFAULT;
-        let with_holds_off = Settings {
+        //
+        // The default is no longer 4/6, and that is exactly why this test can no
+        // longer be written as "the default equals the two-phase pattern": that
+        // equality was the bug, not the guarantee. The guarantee is that a
+        // pattern with both holds off behaves identically whether it came from
+        // the default, from `moving()`, or from typed input — all three are the
+        // same four numbers, so they are the same pattern.
+        let by_default = plain();
+        let by_moving_helper = Settings::moving(4, 6);
+        let by_holds_off = Settings {
             inhale_seconds: 4,
             hold_after_inhale_seconds: 0,
             exhale_seconds: 6,
             hold_after_exhale_seconds: 0,
         };
-        assert_eq!(plain, with_holds_off);
-        assert!(!plain.has_holds());
-        assert_eq!(plain.cycle_seconds(), 10);
-        assert_eq!(plain.pace_label(), "6 breaths/min");
-        assert!(plain.is_valid());
+        assert_eq!(by_default, by_holds_off);
+        assert_eq!(by_moving_helper, by_holds_off);
+        assert!(!by_default.has_holds());
+        assert_eq!(by_default.cycle_seconds(), 10);
+        assert_eq!(by_default.pace_label(), "6 breaths/min");
+        assert!(by_default.is_valid());
 
         for tenth in 0..1000 {
             let at = f64::from(tenth) * 10.0;
-            let (a, b) = (plain.phase_at(at), with_holds_off.phase_at(at));
+            let (a, b) = (by_default.phase_at(at), by_holds_off.phase_at(at));
             assert_eq!(a, b, "at {at} ms");
         }
     }
@@ -1140,7 +1177,7 @@ mod tests {
             (4000.0, "Exhale"),
             (9999.0, "Exhale"),
         ] {
-            assert_eq!(Settings::DEFAULT.phase_at(at).name, expected, "at {at} ms");
+            assert_eq!(plain().phase_at(at).name, expected, "at {at} ms");
         }
 
         // Only the second hold set, so the first is empty and the second is not.
@@ -1431,8 +1468,8 @@ mod tests {
     fn a_hold_gets_its_own_note_that_is_neither_other_one() {
         // Reusing the inhale tone would make "hold after the exhale" sound
         // exactly like the inhale that follows it.
-        let inhale = Settings::DEFAULT.phase_at(0.0).cue_frequency();
-        let exhale = Settings::DEFAULT.phase_at(5000.0).cue_frequency();
+        let inhale = plain().phase_at(0.0).cue_frequency();
+        let exhale = plain().phase_at(5000.0).cue_frequency();
         let hold_top = boxed().phase_at(5000.0).cue_frequency();
         let hold_bottom = boxed().phase_at(13_000.0).cue_frequency();
 

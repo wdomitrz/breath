@@ -354,15 +354,6 @@
         opacity: 0.5;
       }
 
-      /* The hint spans the whole row rather than sitting in a grid cell. */
-      .pattern-hint {
-        grid-column: 1 / -1;
-        margin: 4px 0 0;
-        font-size: 0.72rem;
-        line-height: 1.45;
-        color: var(--muted);
-      }
-
       label {
         display: grid;
         gap: 4px;
@@ -537,18 +528,11 @@
                   autocomplete="off"
                 />
               </label>
-              <!-- The two holds are only meaningful once a breath exists, so
-                   they are announced as part of the pattern rather than as two
-                   more loose numbers. -->
-              <p class="hint pattern-hint">
-                Holds are the pauses between breaths. Leave one at 0 to switch it
-                off — try 4 · 4 · 4 · 4 for box breathing.
-              </p>
             </div>
           </div>
           <div>
             <span>Pace</span>
-            <strong id="pace-label">6 breaths/min</strong>
+            <strong id="pace-label">3 breaths/min</strong>
           </div>
         </div>
 

@@ -48,7 +48,8 @@ Set an inhale, a hold, an exhale and a hold, in whole seconds. A breath must be
 at least 8 seconds with the exhale no more than twice the inhale; a hold is off at
 zero, otherwise 1–20 seconds and no more than twice the inhale. Anything the
 pacer will not run is refused with a reason, and the last good pattern keeps
-running underneath. Try 4 · 4 · 4 · 4 for box breathing.
+running underneath. It opens on 4 · 7 · 8 · 1; try 4 · 4 · 4 · 4 for box
+breathing.
 
 A hold is the pause at the top of the inhale and at the bottom of the exhale. It
 has its own colour and its own tone, and the orb holds still rather than

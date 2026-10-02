@@ -124,6 +124,15 @@ ring, same pace. `both_holds_off_reproduces_the_two_phase_app_exactly` asserts
 that at every tenth of a second of a 4/6 cycle rather than assuming it, because
 this is the one guarantee that must not break silently.
 
+**The default is 4-7-8-1, and used to be 4-in/6-out.** The two-phase behaviour is
+still a guarantee about *patterns with both holds off*, not about the default: it
+used to be worded "the default equals the two-phase app", which made the two
+statements indistinguishable and made the compat test fail for the wrong reason
+when the default changed. Tests about the default name `Settings::DEFAULT`; every
+other test builds its pattern through the `plain()` helper. Do not reach for
+`DEFAULT` as "some valid pattern" — that is what coupled eleven tests to a
+constant none of them were about.
+
 Four decisions were open. Each is recorded here with its reasoning, because each
 could reasonably have gone the other way.
 

@@ -182,6 +182,64 @@ fn the_two_holds_are_visible_and_accept_zero() {
     );
 }
 
+/// The pattern hint is gone, and stays gone.
+///
+/// It used to sit under the four boxes and read "Holds are the pauses between
+/// breaths. Leave one at 0 to switch it off — try 4 · 4 · 4 · 4 for box
+/// breathing." Two reasons it had to go:
+///
+/// * It taught a pattern (4·4·4·4) rather than explaining the fields the user
+///   was looking at, and the default is no longer that pattern either.
+/// * With the default now carrying holds, a line whose whole job was to explain
+///   what a hold *is* was doing the explaining that the default demonstrates.
+///
+/// This asserts on `rendered_text`, not on the raw page, because the text could
+/// equally be reintroduced as a comment — where a reader never sees it — and a
+/// raw `contains` would pass just as happily. The prose is only gone if it is
+/// gone from what a reader sees.
+#[test]
+fn the_pattern_hint_is_not_rendered() {
+    let rendered = rendered_text(&shell());
+    for phrase in ["pauses between breaths", "box breathing", "switch it off"] {
+        assert!(
+            !rendered.contains(phrase),
+            "{phrase:?} is back in the interface:\n{rendered}"
+        );
+    }
+
+    // And the stylesheet rule that only existed to lay it out is gone with it.
+    let page = shell();
+    assert!(
+        !page.contains("pattern-hint"),
+        "the removed hint's stylesheet rule is still here"
+    );
+}
+
+/// The pace readout baked into the shell must be the default's own readout.
+///
+/// `index.html` carries a hand-written "6 breaths/min" so the page shows
+/// something before the bindings load. Nothing kept it in step with
+/// `Settings::DEFAULT`, so the day the default changed from a 10-second cycle
+/// to a 20-second one, the shell would have flashed *6 breaths/min* at a reader
+/// and then corrected itself to 3 on the first tick — a wrong number, shown
+/// before anything had a chance to be right. Asserted against the crate rather
+/// than against a literal, so the next default change fails here rather than in
+/// front of a user.
+#[test]
+fn the_shell_opens_on_the_default_pace() {
+    assert_eq!(
+        breath::pacer::Settings::DEFAULT.pace_label(),
+        "3 breaths/min"
+    );
+
+    let page = shell();
+    let expected = format!("<strong id=\"pace-label\">{}</strong>", "3 breaths/min");
+    assert!(
+        page.contains(&expected),
+        "the shell's opening pace readout must be the default's: {expected}"
+    );
+}
+
 /// The first `<…>` run containing `needle`, for asserting on a single tag.
 fn tag_containing<'a>(page: &'a str, needle: &str) -> Option<&'a str> {
     let mut depth = 0usize;
@@ -234,8 +292,14 @@ fn the_shell_is_accessible_and_honours_the_original_media_queries() {
     // default block rather than a `prefers-color-scheme: dark` query, so the
     // query that must exist is the light override.
     let style = style_of(&page);
-    for query in ["prefers-reduced-motion: reduce", "prefers-color-scheme: light"] {
-        assert!(style.contains(query), "{query} must be respected in the CSS");
+    for query in [
+        "prefers-reduced-motion: reduce",
+        "prefers-color-scheme: light",
+    ] {
+        assert!(
+            style.contains(query),
+            "{query} must be respected in the CSS"
+        );
     }
     // The orb's reduced-motion rule is the original's: no transition, so the
     // value Rust writes is the value shown.
@@ -884,10 +948,7 @@ fn the_manifest_declares_no_theme_color_and_the_shell_owns_both_schemes() {
         "a manifest theme_color cannot follow the scheme and would override the shell's"
     );
     for value in ["\"#0f1117\"", "\"standalone\""] {
-        assert!(
-            code.contains(value),
-            "the manifest must publish {value}"
-        );
+        assert!(code.contains(value), "the manifest must publish {value}");
     }
     let page = shell();
     // Both schemes, and both carrying the background the page is actually
@@ -897,8 +958,7 @@ fn the_manifest_declares_no_theme_color_and_the_shell_owns_both_schemes() {
         assert!(
             page.contains(&format!(
                 "content=\"#0f1117\" media=\"(prefers-color-scheme: {scheme})\""
-            ))
-            || page.contains(&format!(
+            )) || page.contains(&format!(
                 "content=\"#f5f6f8\" media=\"(prefers-color-scheme: {scheme})\""
             )),
             "the shell must declare a theme colour for the {scheme} scheme"
