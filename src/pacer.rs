@@ -540,9 +540,9 @@ impl Phase {
     ///
     /// Three distinct notes for four phases, because the two holds share one:
     /// G4 at 392 Hz for the exhale, D5 at 587 Hz for a hold — a fifth above
-    /// the exhale — and F#5 at 740 Hz for the inhale, a fourth above the hold.
-    /// So the hold sits between the two rather than repeating either, and the
-    /// three are heard as one ascending line.
+    /// the exhale — and F#5 at 740 Hz for the inhale, a major third above the
+    /// hold. So the hold sits between the two rather than repeating either,
+    /// and the three are heard as one ascending line.
     ///
     /// Reusing the inhale note for a hold was the obvious cheap option and it is
     /// wrong: a hold after the exhale would then sound exactly like the inhale
