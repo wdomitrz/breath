@@ -11,14 +11,14 @@
 //! testing.
 //!
 //! A cycle is up to four phases: **inhale, hold, exhale, hold**. The holds are
-//! retentions — the box-breathing and coherent-breathing rests — and either may
-//! be zero, which is what a two-phase pattern is. Setting both to zero
-//! reproduces the original app exactly: same phases in the same order, same
-//! formulae, same ring sweep, same pace.
+//! retentions, and either may be zero — which is what a two-phase pattern is.
+//! Setting both to zero reproduces the original app exactly: same phases in the
+//! same order, same formulae, same ring sweep, same pace.
 //!
 //! What changed from the two-phase original, and why, is recorded at each of the
-//! four places it could have been done differently: [`Settings::validate`],
-//! [`Settings::pace_label`], [`Phase`] and [`PersistedSettings`].
+//! four places it could reasonably have gone the other way:
+//! [`Settings::validate`], [`Settings::pace_label`], [`Phase`] and
+//! [`PersistedSettings`].
 
 use serde::{Deserialize, Serialize};
 
@@ -53,34 +53,23 @@ pub const MIN_HOLD_SECONDS: u32 = 1;
 
 /// The longest hold the app accepts, in seconds.
 ///
-/// Twenty seconds is the working ceiling of breath-hold practice and is also
-/// about two and a half times the widest inhale the app allows, which is the
-/// ratio that keeps a hold from dominating its own cycle — see
-/// [`MAX_HOLD_INHALE_RATIO`].
+/// Twenty seconds is the working ceiling of breath-hold practice, and it is
+/// about two and a half times the widest inhale the app allows — the ratio that
+/// keeps a hold from dominating its own cycle (see [`MAX_HOLD_INHALE_RATIO`]).
 pub const MAX_HOLD_SECONDS: u32 = 20;
 
 /// A hold may be at most this many times the inhale it follows.
 ///
-/// This is the rule that needed the most thought, because there are two
-/// plausible versions and they disagree.
+/// Two readings were plausible and they disagree. `hold <= inhale` is what box
+/// breathing prescribes and what coherent breathing does, but it makes 4-4-4-4
+/// unreachable — a 4-second hold would be the cap and the inhale is also 4 — and
+/// that is the most widely prescribed retention pattern there is. Two to one
+/// keeps box breathing reachable and still bounds the hold to a third of a
+/// 15-second cycle.
 ///
-/// The generous reading is that a hold is *only* worth having when it is
-/// shorter than the inhale that filled the lungs — hold longer than you inhaled
-/// and you are not doing a breath exercise, you are holding your breath. That
-/// gives `hold <= inhale`, which is what box breathing actually prescribes
-/// (4-4-4-4) and what every coherent-breathing variant does.
-///
-/// The permissive reading is `hold <= inhale * 2`, keeping the exhale rule's
-/// own headroom and so treating a hold as just another exhale-shaped stretch.
-///
-/// Two to one is chosen. Box breathing is the pattern people are trying to
-/// reach when they add a hold, and a hold capped at the inhale length makes
-/// that unreachable: 4-4-4-4 would be rejected, and it is the single most
-/// widely prescribed retention pattern there is. A user who wants a hold longer
-/// than the inhale is doing something deliberate, and the cap that matters to
-/// them is the absolute one. The consequence is that a 3-second inhale admits a
-/// 6-second hold — deliberately allowed, and still short enough that the hold
-/// never exceeds a third of a 15-second cycle.
+/// The cost, taken deliberately: a 3-second inhale admits a 6-second hold. A
+/// user who wants a hold longer than the inhale is doing something on purpose,
+/// and the absolute cap is the one that matters to them.
 pub const MAX_HOLD_INHALE_RATIO: u32 = 2;
 
 /// The labels the four phases are shown and announced under.
@@ -90,7 +79,6 @@ pub const MAX_HOLD_INHALE_RATIO: u32 = 2;
 pub const PHASE_INHALE: &str = "Inhale";
 /// The hold after an inhale.
 pub const PHASE_HOLD: &str = "Hold";
-/// The label for the exhale.
 pub const PHASE_EXHALE: &str = "Exhale";
 
 /// The pattern, in whole seconds: four durations, two of them optional.
@@ -175,27 +163,17 @@ impl Settings {
     /// message they saw before rather than a different one from the same rule
     /// set.
     ///
-    /// **The two existing rules are unchanged in what they mean, and that was
+    /// **The two original rules are unchanged in what they mean, and that was
     /// the decision worth getting right.** "At least 8 seconds per breath" and
-    /// "exhale no more than twice the inhale" were both written for a cycle that
-    /// *was* the breath. Now a cycle can be longer than the breath, because a
-    /// hold sits inside it. Two readings were possible:
-    ///
-    /// * Read both rules against [`Self::cycle_seconds`]. The 8-second floor
-    ///   then stops being a floor on the breath and becomes a floor on the whole
-    ///   pattern, and the ratio rule starts comparing an exhale against a number
-    ///   that includes two holds — so 3/3 with a 20-second hold "passes" the
-    ///   ratio rule for the wrong reason, and a 3/6 pattern fails the 8-second
-    ///   rule whenever the user happens to have typed a hold.
-    /// * Read both against [`Self::moving_seconds`] — inhale plus exhale — and
-    ///   let holds count only where they are actually judged.
-    ///
-    /// The second is chosen. Both rules are about the *breath*, and the breath
-    /// is still inhale plus exhale; a hold does not make a 3-second inhale
-    /// gentler, so it should not be able to satisfy a floor on how long one is.
-    /// It also means every two-phase pattern validates exactly as it did before,
-    /// and the three genuinely new rules — the two hold ranges and the
-    /// hold-against-inhale cap — are the only ones a hold can newly fail.
+    /// "exhale no more than twice the inhale" were both written when the cycle
+    /// *was* the breath. A hold now sits inside the cycle, so a cycle can be
+    /// longer than the breath; reading either rule against
+    /// [`Self::cycle_seconds`] would turn the 8-second floor into a floor on the
+    /// whole pattern and let 3/3 with a 20-second hold pass the ratio rule for
+    /// the wrong reason. Both rules are therefore read against
+    /// [`Self::moving_seconds`] — inhale plus exhale — which also means every
+    /// two-phase pattern validates exactly as it did before, and the three new
+    /// rules are the only ones a hold can newly fail.
     pub fn validate(&self) -> Validation {
         if self.inhale_seconds < 3 || self.inhale_seconds > MAX_INHALE_SECONDS {
             return Validation::Invalid("Inhale should be 3 to 10 seconds.");
@@ -257,7 +235,6 @@ impl Settings {
         format!("{formatted} breaths/min")
     }
 
-    /// The width of one full breath, in seconds.
     pub fn cycle_seconds_f64(&self) -> f64 {
         f64::from(self.cycle_seconds())
     }
@@ -277,7 +254,6 @@ impl Settings {
         (elapsed_ms / 1000.0).rem_euclid(cycle)
     }
 
-    /// The phase, orb scale and ring sweep at `elapsed_ms` into the cycle.
     /// The phase, orb scale and ring sweep at `elapsed_ms` into the cycle.
     ///
     /// The four phases are walked in order, each consuming its own duration, and
@@ -306,7 +282,6 @@ impl Settings {
         let position = self.cycle_position_seconds(elapsed_ms);
         let mut remaining = position;
 
-        // Inhale: the ring fills and the orb grows.
         let inhale = f64::from(self.inhale_seconds);
         if position < inhale {
             let progress = ratio(position, inhale);
@@ -318,7 +293,6 @@ impl Settings {
         }
         remaining -= inhale;
 
-        // Hold after the inhale: the orb is steady and full.
         let hold_in = f64::from(self.hold_after_inhale_seconds);
         if hold_in > 0.0 && remaining < hold_in {
             return Phase {
@@ -329,14 +303,12 @@ impl Settings {
         }
         remaining -= hold_in;
 
-        // Exhale: the ring empties and the orb shrinks.
         let exhale = f64::from(self.exhale_seconds);
         if remaining < exhale {
             let progress = ratio(remaining, exhale);
             return Phase {
-                // The ring sweeps *back* to empty through the exhale, so the
-                // circle is one continuous arc rather than two sweeps that meet
-                // abruptly at the top.
+                // Sweeps *back* to empty, so the circle is one continuous arc
+                // rather than two sweeps meeting abruptly at the top.
                 progress_percent: (1.0 - progress) * 100.0,
                 orb_scale: Phase::ORB_MAX - progress * (Phase::ORB_MAX - Phase::ORB_MIN),
                 ..Phase::EXHALE
@@ -344,25 +316,17 @@ impl Settings {
         }
         remaining -= exhale;
 
-        // Hold after the exhale: the orb is steady and at rest, and the ring
-        // stays empty — which is what the exhale left it.
+        // Both the orb and the ring stay exactly where the exhale left them,
+        // so nothing on the dial moves during either hold.
         //
-        // It used to close the arc here, sweeping from full back to empty
-        // across the hold, on the reasoning that a four-phase cycle should read
-        // as one continuous sweep. That was the one place the ring moved during
-        // a hold, and it made the bottom hold the only phase in which the user
-        // watches a bar drain while being told to hold still — a hold that
-        // empties the ring is a hold the eye reads as a slow exhale. Holding
-        // still now means the whole figure is still: the orb at rest and the
-        // ring at empty, both of which is what the exhale ends with.
-        //
-        // The cost is honest and is paid at the top of the next inhale, where
-        // the ring goes from empty to its first sliver of fill. That snap was
-        // previously paid by the hold instead, spread over its whole length, and
-        // it is the lesser one: it happens once per cycle, at the boundary the
-        // user is already watching for the next breath to start, and a sliver
-        // appearing is a far smaller visual event than a bar quietly draining
-        // for four seconds while the label says "Hold".
+        // This used to close the arc here, sweeping from full back to empty
+        // across the hold, on the reasoning that four phases should read as one
+        // continuous sweep. That made the bottom hold the only phase in which
+        // the user watches a bar drain while being told to hold still — and a
+        // hold that empties the ring is one the eye reads as a slow exhale. The
+        // discontinuity it avoided is now paid at the top of the next inhale,
+        // where the empty ring meets its first sliver of fill: once per cycle,
+        // at the boundary the user is already watching for the next breath.
         let hold_out = f64::from(self.hold_after_exhale_seconds);
         if remaining < hold_out {
             return Phase {
@@ -489,7 +453,7 @@ pub struct Phase {
     pub name: &'static str,
     /// How much of the ring is filled, in percent.
     pub progress_percent: f64,
-    /// The orb's size relative to its resting scale.
+    /// The orb's scale relative to [`Self::ORB_MIN`].
     pub orb_scale: f64,
     /// Which of the four phases this is.
     pub kind: PhaseKind,
@@ -497,11 +461,9 @@ pub struct Phase {
 
 /// Which of the four phases a [`Phase`] is.
 ///
-/// Split from `name` because the ring and the orb are driven by *behaviour* and
-/// the label is only ever shown, and conflating the two makes every paint site
-/// match on a string. The two holds share one label but keep their own identity,
-/// so the ring can tell "hold after the inhale" from "hold after the exhale"
-/// even though both are called "Hold".
+/// Split from `name` because the ring and the orb are driven by *behaviour*
+/// while the label is only ever shown, and conflating the two makes every paint
+/// site match on a string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PhaseKind {
     /// Lungs filling.
@@ -515,7 +477,6 @@ pub enum PhaseKind {
 }
 
 impl Phase {
-    /// A hold in progress at the top of the inhale.
     const INHALE: Self = Self {
         name: PHASE_INHALE,
         progress_percent: 0.0,
@@ -539,7 +500,6 @@ impl Phase {
         kind: PhaseKind::HoldOut,
     };
 
-    /// An exhale in progress.
     const EXHALE: Self = Self {
         name: PHASE_EXHALE,
         progress_percent: 0.0,
@@ -571,18 +531,16 @@ impl Phase {
     /// The frequency, in hertz, of the note that marks this phase beginning.
     ///
     /// Three distinct notes for four phases, because the two holds share one:
-    ///
-    /// * **Inhale** is the rising fifth, 740 Hz.
-    /// * **Exhale** is its octave below, 392 Hz.
-    /// * **Hold** is 587 Hz — a major third above the exhale and a fourth below
-    ///   the inhale, so it sits between the two rather than repeating either.
+    /// the rising fifth at 740 Hz for the inhale, its octave below at 392 Hz for
+    /// the exhale, and 587 Hz for a hold — a major third above the exhale and a
+    /// fourth below the inhale, so it sits between the two rather than
+    /// repeating either, and the three are heard as one scale.
     ///
     /// Reusing the inhale note for a hold was the obvious cheap option and it is
     /// wrong: a hold after the exhale would then sound exactly like the inhale
-    /// that will follow it, and the two cues would be indistinguishable in the
-    /// one situation where the user most needs to know which is which. One note
-    /// for both holds is right — from the inside they are the same instruction,
-    /// which is to wait — and it is not any of the other two.
+    /// that follows it, in the one situation where the user most needs to tell
+    /// them apart. One note for both holds is right — from the inside they are
+    /// the same instruction, which is to wait.
     pub fn cue_frequency(&self) -> f32 {
         match self.kind {
             PhaseKind::Inhale => 740.0,
@@ -594,20 +552,15 @@ impl Phase {
 
 /// The pace readout for a cycle width, to one decimal place.
 ///
-/// This is JavaScript's `Number.prototype.toFixed(1)`, not a truncation: the
-/// eleventh decides the tenth, and ties round *up* (away from zero) rather than
-/// to even as Rust's `round` does. The difference is visible in this very app —
-/// a 9-second cycle is 6.666… breaths a minute and reads "6.7", where a
-/// half-up rounding also gives "6.7" and a round-half-to-even gives "6.7" too,
-/// but a 21-second cycle is 2.857… and reads "2.9", where rounding to even
-/// would give "2.9" as well; the cases where they diverge are exactly the ties,
-/// and ties are what makes truncation wrong.]
+/// JavaScript's `Number.prototype.toFixed(1)`, not a truncation: ties round
+/// *away from zero*, where Rust's `f64::round` rounds to even. Written out
+/// rather than delegated because the readout is user-visible text and the two
+/// differ exactly on those ties.
 ///
-/// Written out rather than delegating because the two differ on ties and the
-/// readout is user-visible text. Away from a tie the two agree to a tenth, and
-/// `60 / cycle` can never be an exact tie for the cycle widths this app accepts
-/// (that would need `cycle` to divide `600` into exact tenths), so no readout
-/// this app can produce reaches the disagreement.
+/// Away from a tie the two agree to a tenth, and `60 / cycle` can never be an
+/// exact tie for the cycle widths this app accepts — that would need `cycle` to
+/// divide `600` into exact tenths — so no readout this app can produce reaches
+/// the disagreement.
 pub fn format_tenths(value: f64) -> String {
     let scaled = value * 10.0;
     // `f64::floor` of `scaled + 0.5` is round-half-up, which is what
@@ -618,11 +571,8 @@ pub fn format_tenths(value: f64) -> String {
     format!("{whole}.{tenth}")
 }
 
-/// The pace readout for a whole number of breaths per minute, which is written
-/// without a decimal point at all.
-///
-/// Split out from [`Settings::pace_label`] so the rule — an exact integer gets
-/// no trailing `.0` — can be asserted on its own.
+/// The pace readout for a whole number of breaths per minute: an exact integer
+/// is written without a decimal point at all.
 pub fn format_whole(value: u32) -> String {
     format!("{value} breaths/min")
 }
@@ -651,14 +601,13 @@ pub fn settings_from_json(raw: Option<&str>) -> Settings {
 /// The exact shape written to `localStorage`: the four durations, nothing else.
 ///
 /// **Both hold fields carry `#[serde(default)]`, and that is the whole reason
-/// this type exists separately from [`Settings`].** Settings written by the
-/// two-phase version of this app are two keys long. Deserialising that into a
-/// four-field struct without a default per field fails outright, and a failed
-/// read means falling back to the default pattern — so every existing user's
-/// carefully chosen 4/6 would silently become the default the first time they
-/// opened the app after this update. With the defaults, a two-key entry reads
-/// as two-key-plus-two-zeros, which is exactly the pattern it describes, and
-/// nothing about anyone's setup changes.
+/// this type exists separately from [`Settings`].** An entry written by the
+/// two-phase version of this app is two keys long, and deserialising that into a
+/// four-field struct without a default per field fails outright — which means
+/// falling back to the default, so every existing user's carefully chosen 4/6
+/// would silently become the default the first time they opened the app after
+/// this update. With the defaults a two-key entry reads as two-key-plus-two-
+/// zeros: the pattern it describes, with nothing about anyone's setup changed.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct PersistedSettings {
     /// Seconds spent inhaling.
@@ -703,19 +652,17 @@ impl PersistedSettings {
 
 /// Parse an input box into whole seconds.
 ///
-/// The original used `parseInt`, which reads a leading integer and ignores
-/// whatever follows: `"4s"` is 4, `"4.7"` is 4, `""` is `NaN`. The truncation to
-/// a whole second is the point — these inputs are whole seconds — so this keeps
-/// the lenient reading of a leading run of digits and returns `None` where the
-/// original produced `NaN`, which the caller treats as "leave the pattern
-/// alone".
+/// The original used `parseInt`, which reads a leading run of digits and
+/// ignores whatever follows: `"4s"` is 4, `"4.7"` is 4, `""` is `NaN`. The
+/// truncation to a whole second is the point — these inputs are whole seconds —
+/// so this keeps the lenient reading and returns `None` where the original
+/// produced `NaN`, which the caller treats as "leave the pattern alone".
 ///
-/// The one case that needs care is a leading `.`. `parseInt("3.")` is 3, but
-/// `parseInt(".3")` is `NaN`, because a number may not begin with a point. A
-/// box mid-edit shows `.3`, and reading that as three seconds would commit a
-/// pattern the user did not choose; so a leading `.` is rejected here and an
-/// interior one — the trailing dot of a "3." — is still read as 3, exactly as
-/// the original read it.
+/// A leading `.` is the one case that needs care: `parseInt("3.")` is 3, but
+/// `parseInt(".3")` is `NaN`, because a number may not begin with a point. A box
+/// mid-edit shows `.3`, and reading that as three seconds would commit a pattern
+/// the user did not choose, so a leading `.` is rejected here while the trailing
+/// dot of a "3." still reads as 3.
 pub fn parse_whole_seconds(raw: &str) -> Option<u32> {
     let raw = raw.trim();
     if raw.starts_with('.') {
@@ -732,7 +679,7 @@ pub fn parse_whole_seconds(raw: &str) -> Option<u32> {
 mod tests {
     use super::*;
 
-    /// One whole breath of the default pattern: 4 s in plus 6 s out, in ms.
+    /// One whole breath of [`plain`]: 4 s in plus 6 s out, in ms.
     const ONE_CYCLE_MS: f64 = 10.0 * 1000.0;
 
     /// The pacer's clock is `f64` milliseconds, so "the same instant one cycle
@@ -745,20 +692,16 @@ mod tests {
     /// 4 in, 6 out: the two-phase pattern, written out rather than reached
     /// through `Settings::DEFAULT`.
     ///
-    /// It used to be the default, so a lot of tests reached for `DEFAULT` when
-    /// they wanted any simple valid pattern. Changing the default then broke
-    /// eleven of them at once, none of which were about the default — a test
-    /// that fails because the default moved is a test whose subject is
-    /// ambiguous. Tests about the default say `DEFAULT`; every other test says
-    /// which pattern it means.
+    /// It used to be the default, and many tests reached for `DEFAULT` when they
+    /// wanted any simple valid pattern; changing it then broke eleven of them at
+    /// once, none of which were about the default. Tests about the default say
+    /// `DEFAULT`; every other test says which pattern it means.
     fn plain() -> Settings {
         Settings::moving(4, 6)
     }
 
     #[test]
     fn the_default_pattern_is_four_seven_eight_one() {
-        // 4-7-8-1: the calm-down pattern, and the only one that uses the
-        // widest exhale the app accepts.
         assert_eq!(Settings::DEFAULT.inhale_seconds, 4);
         assert_eq!(Settings::DEFAULT.hold_after_inhale_seconds, 7);
         assert_eq!(Settings::DEFAULT.exhale_seconds, 8);
@@ -769,19 +712,15 @@ mod tests {
 
     #[test]
     fn a_twenty_second_cycle_is_three_breaths_a_minute() {
-        // The default is a 20 s cycle, so it opens at three breaths a minute —
-        // and that is a whole number, so the readout carries no decimal.
         assert_eq!(Settings::DEFAULT.pace_label(), "3 breaths/min");
     }
 
     #[test]
     fn the_pace_is_an_integer_when_it_can_be() {
-        // 5 s and 5 s: exactly 12.
         let settings = Settings::moving(5, 5);
         assert_eq!(settings.cycle_seconds(), 10);
-        // The default happens to be a whole rate too, and is asserted here so
-        // the two "no trailing .0" cases are covered: an exact integer written
-        // plainly, and the same value reached from a different pattern.
+        // The default is a whole rate too, so both ways of reaching an exact
+        // integer are covered here.
         assert_eq!(Settings::DEFAULT.pace_label(), format_whole(3));
         assert_eq!(settings.pace_label(), "6 breaths/min");
     }
@@ -818,15 +757,12 @@ mod tests {
     #[test]
     fn the_exhale_sweeps_the_ring_back_and_shrinks_the_orb() {
         let settings = plain();
-        // 7 s into a 4-in/6-out cycle is 3 s into a six-second exhale: half
-        // way through it, so the ring has swept back to half and the orb is
-        // halfway from full to resting.
+        // 7 s into a 4-in/6-out cycle is 3 s into a six-second exhale.
         let phase = settings.phase_at(7000.0);
         assert_eq!(phase.name, "Exhale");
         assert!((phase.progress_percent - 50.0).abs() < 1e-9);
         assert!((phase.orb_scale - (1.0 - 0.26 / 2.0)).abs() < 1e-9);
 
-        // One second into that exhale, it is a sixth of the way.
         let early = settings.phase_at(5000.0);
         assert!((early.progress_percent - (1.0 - 1.0 / 6.0) * 100.0).abs() < 1e-9);
         assert!((early.orb_scale - (1.0 - 0.26 / 6.0)).abs() < 1e-9);
@@ -854,12 +790,9 @@ mod tests {
             &settings.phase_at(ONE_CYCLE_MS + 10.0),
             &settings.phase_at(10.0),
         );
-        // An hour later, resumed at the same point in the cycle: no drift, and
-        // no jump to somewhere arbitrary after a backgrounded tab.
-        // An hour is 360 whole cycles, but `f64` milliseconds cannot say so
-        // exactly, so this is the case a plain `==` would fail on. What matters
-        // is that a cycle boundary crossed an hour ago is still a boundary now:
-        // no accumulated drift, and no jump after a tab restore.
+        // An hour later, resumed at the same point in the cycle. An hour is 360
+        // whole cycles, but `f64` milliseconds cannot say so exactly, so this is
+        // the case a plain `==` would fail on.
         let hour = 60.0 * 60.0 * 1000.0;
         close(&settings.phase_at(hour), &settings.phase_at(0.0));
         close(
@@ -985,8 +918,6 @@ mod tests {
 
     #[test]
     fn the_stored_shape_holds_nothing_but_the_durations() {
-        // The cycle start time is runtime state and must not be persisted, so
-        // the serialised form can only ever be these four keys.
         let json = PersistedSettings::of(&Settings::DEFAULT).to_json();
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
         let object = parsed.as_object().expect("an object");
@@ -1015,13 +946,9 @@ mod tests {
             "a two-key entry must read as that pattern with no holds"
         );
 
-        // Including one that is *not* the default, so a fallback would show up
-        // rather than coincide.
         let slow = r#"{"inhale_seconds":7,"exhale_seconds":11}"#;
         assert_eq!(settings_from_json(Some(slow)), Settings::moving(7, 11));
 
-        // A missing non-default field is still a missing non-default field, and
-        // falls back exactly as it always did.
         assert_eq!(
             settings_from_json(Some(r#"{"inhale_seconds":4}"#)),
             Settings::DEFAULT,
@@ -1310,10 +1237,7 @@ mod tests {
     ///
     /// This is the test the bottom hold failed when it was still closing the
     /// ring's arc: the orb held, and the ring drained from full to empty over
-    /// the four seconds the user was being told to hold still. The property is
-    /// stated over the whole window rather than at two instants on purpose — a
-    /// sweep is a thing that is *nearly* static at its endpoints, so sampling
-    /// the boundaries is what let it through.
+    /// the four seconds the user was being told to hold still.
     #[test]
     fn no_hold_moves_anything_on_the_dial() {
         for settings in [boxed(), bottom_hold_only()] {
@@ -1421,25 +1345,20 @@ mod tests {
         // inhale begins. This is the property that makes the moving halves of a
         // four-phase cycle read as one breath.
         //
-        // The ring's *fall* now happens only in the exhale; both holds park it.
-        // The test used to exempt the bottom hold from the no-backwards rule
-        // precisely because that hold was sweeping, so this is where the change
-        // shows: the exemption is gone and the exhale is the only falling phase.
-        let settings = boxed();
-        // The comparison is made *within* a phase rather than between the sample
-        // before and the sample now, and that is the whole point. A between-
-        // sample comparison has to tolerate one step's worth of the exhale's
-        // rate, because a sample ten milliseconds before the boundary is in the
-        // exhale and the next is in the hold — and a tolerance that size will
-        // quietly swallow a slow drain inside a hold, which is precisely the
-        // regression this change is about. (It did: a hold draining a fifth of
-        // the ring passed a version of this test that allowed the slack.)
-        // Within a phase there is no boundary to straddle, so the tolerance is
-        // exact and nothing can hide in it.
-        //
         // The exhale is the only phase that may fall, and both holds park the
         // ring: the test used to exempt the bottom hold from the no-backwards
         // rule because that hold was sweeping, and the exemption is now gone.
+        //
+        // The comparison is made *within* a phase rather than between the
+        // sample before and the sample now. A between-sample comparison has to
+        // tolerate one step's worth of the exhale's rate, because a sample ten
+        // milliseconds before the boundary is in the exhale and the next is in
+        // the hold — and a tolerance that size quietly swallows a slow drain
+        // inside a hold, which is the regression this test exists for. (It did:
+        // a hold draining a fifth of the ring passed a version that allowed the
+        // slack.) Within a phase there is no boundary to straddle, so the
+        // tolerance is exact and nothing can hide in it.
+        let settings = boxed();
         let mut previous = settings.phase_at(0.0);
         for step in 1..1600 {
             let now = settings.phase_at(f64::from(step) * 10.0);
