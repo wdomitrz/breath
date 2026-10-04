@@ -29,15 +29,16 @@ const ICON_SIZES: [u32; 2] = [192, 512];
 /// The two wasm artefacts are deliberately absent: `wasm-bindgen` writes them
 /// into `dist/` just before this script runs, and it must not delete them —
 /// they are the app itself.
+///
+/// The SVG is published as well as being the source the PNGs are rasterized
+/// from: the shell asks for it as the favicon and the worker precaches it, and
+/// `caches.addAll` rejects the *whole* install if any URL 404s -- so a site
+/// whose `dist/` holds seven files installs no worker at all and silently
+/// loses offline support, looking like a caching bug.
 const SHELL: &[(&str, &str)] = &[
     ("index.html", "src/ui.html"),
     ("service-worker.js", "src/service-worker.js"),
     ("icon.svg", "assets/icon.svg"),
-    // The SVG goes into `dist/` as well as being the source the PNGs are
-    // rasterized from: the shell asks for it as the favicon and the worker
-    // precaches it, and `caches.addAll` rejects the *whole* install if any URL
-    // 404s -- so a site whose `dist/` holds seven files installs no worker at
-    // all and silently loses offline support, looking like a caching bug.
 ];
 
 /// The icon `build.rs` rasterizes, and its committed source.

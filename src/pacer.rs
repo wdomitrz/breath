@@ -680,13 +680,15 @@ mod tests {
     use super::*;
 
     /// One whole breath of [`plain`]: 4 s in plus 6 s out, in ms.
-    const ONE_CYCLE_MS: f64 = 10.0 * 1000.0;
+    const PLAIN_CYCLE_MS: f64 = 10.0 * 1000.0;
 
     /// The pacer's clock is `f64` milliseconds, so "the same instant one cycle
-    /// later" is never bit-identical after a `rem_euclid`: 10 010 ms is not
-    /// representable, and neither is its remainder. This is the largest
-    /// difference a single cycle can introduce — about 5e-14 percent of the
-    /// ring — and a millisecond of it is invisible on a 300 px dial.
+    /// later" is not bit-identical after a `rem_euclid`. The inputs are exact:
+    /// 10 010 ms is an integer well inside `f64`'s exact range. The error is in
+    /// the arithmetic — dividing by 1000 and then taking the remainder — which
+    /// leaves the two readings about 2e-16 of a second apart, or 2e-17 of the
+    /// ring. That is seven orders of magnitude under the tolerance below, and
+    /// far too small to see on a 300 px dial.
     const EXACT_ENOUGH: f64 = 1e-9;
 
     /// 4 in, 6 out: the two-phase pattern, written out rather than reached
@@ -787,7 +789,7 @@ mod tests {
             );
         };
         close(
-            &settings.phase_at(ONE_CYCLE_MS + 10.0),
+            &settings.phase_at(PLAIN_CYCLE_MS + 10.0),
             &settings.phase_at(10.0),
         );
         // An hour later, resumed at the same point in the cycle. An hour is 360
