@@ -27,7 +27,7 @@ pub const STORAGE_KEY: &str = "breath-pwa-settings-v3";
 
 /// How often the page re-reads the clock, in milliseconds.
 ///
-/// 80 ms is twelve and a half frames at 60 Hz: fast enough that the orb looks
+/// 80 ms is just under five frames at 60 Hz: fast enough that the orb looks
 /// continuous, slow enough that a background tab costs nothing.
 pub const TICK_MS: u32 = 80;
 
@@ -49,13 +49,19 @@ pub const MAX_EXHALE_INHALE_RATIO: u32 = 2;
 /// pattern the app shipped for years, and it must stay reachable without
 /// clearing a box. One second is the smallest value a person can actually hold
 /// for on purpose, so there is nothing between.
+///
+/// Nothing reads this: the checks in [`Settings::validate`] reject a hold above
+/// [`MAX_HOLD_SECONDS`] and nothing below it, which is exactly a 1..=20 range
+/// over a `u32`. The constant states the floor that the error message promises
+/// and that no code has to enforce.
 pub const MIN_HOLD_SECONDS: u32 = 1;
 
 /// The longest hold the app accepts, in seconds.
 ///
-/// Twenty seconds is the working ceiling of breath-hold practice, and it is
-/// about two and a half times the widest inhale the app allows — the ratio that
-/// keeps a hold from dominating its own cycle (see [`MAX_HOLD_INHALE_RATIO`]).
+/// Twenty seconds is the working ceiling of breath-hold practice. It is twice
+/// the widest inhale the app allows, the same ratio as
+/// [`MAX_HOLD_INHALE_RATIO`], so twenty is only reachable by a ten-second
+/// inhale, which is the widest the app takes anyway.
 pub const MAX_HOLD_SECONDS: u32 = 20;
 
 /// A hold may be at most this many times the inhale it follows.
@@ -64,11 +70,12 @@ pub const MAX_HOLD_SECONDS: u32 = 20;
 /// breathing prescribes and what coherent breathing does, but it makes 4-4-4-4
 /// unreachable — a 4-second hold would be the cap and the inhale is also 4 — and
 /// that is the most widely prescribed retention pattern there is. Two to one
-/// keeps box breathing reachable and still bounds the hold to a third of a
-/// 15-second cycle.
+/// keeps box breathing reachable, and bounds a hold to twice the movement that
+/// filled the lungs before it.
 ///
-/// The cost, taken deliberately: a 3-second inhale admits a 6-second hold. A
-/// user who wants a hold longer than the inhale is doing something on purpose,
+/// The cost, taken deliberately: a 3-second inhale admits a 6-second hold, and
+/// against the 3-second minimum exhale that is a hold occupying more than half
+/// the cycle. A user who wants a hold that long is doing something on purpose,
 /// and the absolute cap is the one that matters to them.
 pub const MAX_HOLD_INHALE_RATIO: u32 = 2;
 
@@ -191,9 +198,10 @@ impl Settings {
             return Validation::Invalid("Keep exhale no more than twice the inhale.");
         }
 
-        // Zero is a hold that is switched off, never an error. Anything else has
-        // to be a hold a person can actually hold for, and short enough that it
-        // does not become the cycle.
+        // Only the ceiling is enforced. Zero is a hold that is switched off
+        // and never an error, and anything from 1 up is a hold a person can
+        // actually hold for, so the range these two checks leave open is
+        // exactly the 1..=20 the message promises.
         if self.hold_after_inhale_seconds > MAX_HOLD_SECONDS {
             return Validation::Invalid("Hold should be off or 1 to 20 seconds.");
         }
@@ -531,10 +539,10 @@ impl Phase {
     /// The frequency, in hertz, of the note that marks this phase beginning.
     ///
     /// Three distinct notes for four phases, because the two holds share one:
-    /// the rising fifth at 740 Hz for the inhale, its octave below at 392 Hz for
-    /// the exhale, and 587 Hz for a hold — a major third above the exhale and a
-    /// fourth below the inhale, so it sits between the two rather than
-    /// repeating either, and the three are heard as one scale.
+    /// G4 at 392 Hz for the exhale, D5 at 587 Hz for a hold — a fifth above
+    /// the exhale — and F#5 at 740 Hz for the inhale, a fourth above the hold.
+    /// So the hold sits between the two rather than repeating either, and the
+    /// three are heard as one ascending line.
     ///
     /// Reusing the inhale note for a hold was the obvious cheap option and it is
     /// wrong: a hold after the exhale would then sound exactly like the inhale
@@ -686,9 +694,10 @@ mod tests {
     /// later" is not bit-identical after a `rem_euclid`. The inputs are exact:
     /// 10 010 ms is an integer well inside `f64`'s exact range. The error is in
     /// the arithmetic — dividing by 1000 and then taking the remainder — which
-    /// leaves the two readings about 2e-16 of a second apart, or 2e-17 of the
-    /// ring. That is seven orders of magnitude under the tolerance below, and
-    /// far too small to see on a 300 px dial.
+    /// leaves the two readings 2.1e-16 of a second apart: 5.3e-15 of the ring's
+    /// progress_percent, or 1.4e-17 of the orb's scale. Both are orders of
+    /// magnitude under the tolerance below, and far too small to see on a
+    /// 300 px dial.
     const EXACT_ENOUGH: f64 = 1e-9;
 
     /// 4 in, 6 out: the two-phase pattern, written out rather than reached
@@ -1398,7 +1407,7 @@ mod tests {
         assert_ne!(hold_top, inhale, "a hold is not the inhale");
         assert_ne!(hold_top, exhale, "a hold is not the exhale");
         // And it sits between the two rather than above or below both, so the
-        // three are heard as one scale.
+        // three are heard as one ascending line.
         assert!(
             hold_top > exhale && hold_top < inhale,
             "587 Hz is between the exhale and the inhale"
