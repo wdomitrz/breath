@@ -155,7 +155,10 @@ practice. The ratio needed the most thought, because two readings disagree:
 `hold <= inhale` is what box breathing actually prescribes, but it makes 4-4-4-4
 — the most widely prescribed retention pattern there is — *unreachable*, since a
 4-second hold would be the cap and the inhale is also 4. Two-to-one keeps box
-breathing available and still bounds the hold to a third of a 15-second cycle.
+breathing available and bounds a hold to twice the movement that filled the lungs
+before it. The cost is that a 3-second inhale admits a 6-second hold, which
+against the 3-second minimum exhale is more than half the cycle; a user who wants
+that is doing something on purpose.
 Both holds are measured against the **inhale**, not the exhale: a hold is not a
 kind of exhale, and with nothing else to compare against the exhale would be the
 only candidate.
@@ -163,10 +166,10 @@ only candidate.
 **3. A hold gets its own colour and one note of its own.** Reusing the inhale
 tone was the cheap option and it is wrong — a hold after the exhale would sound
 exactly like the inhale about to follow, which is the one moment where telling
-them apart matters most. The hold tone is 587 Hz, a third above the exhale and a
-fourth below the inhale, so the three are heard as one scale; both holds share
-it, because from the inside they are the same instruction: wait. The hold
-*colour* is a desaturated slate that is neither of the moving colours, so "I am
+them apart matters most. The hold tone is 587 Hz, a fifth above the exhale and
+a fourth below the inhale, so the three are heard as one ascending line; both
+holds share it, because from the inside they are the same instruction: wait. The
+hold *colour* is a desaturated slate that is neither of the moving colours, so "I am
 not breathing right now" is visible without reading the label.
 
 **4. A hold is the absence of movement.** The orb holds the size the movement

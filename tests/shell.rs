@@ -21,15 +21,12 @@
 
 use std::path::Path;
 
-/// The repository root, for reading committed files.
 fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// The app shell, as committed.
-///
-/// `build.rs` copies this into `dist/index.html` byte for byte, so asserting on
-/// it asserts on exactly what gets published.
+/// The app shell. `build.rs` copies this into `dist/index.html` byte for byte,
+/// so asserting on it asserts on exactly what gets published.
 fn shell() -> String {
     let path = root().join("src/ui.html");
     std::fs::read_to_string(&path)
@@ -38,14 +35,11 @@ fn shell() -> String {
 
 /// The shell's inline `<style>` block, and nothing else.
 ///
-/// Assertions about what the *stylesheet* says — that a media query exists, that
-/// a custom property is defined — have to be scoped to it. A whole-document
-/// search is satisfied by a `meta` tag, an HTML comment or an attribute that
-/// merely mentions the same words, so it goes green with the rule deleted. This
-/// returns the CSS alone, so a deleted rule cannot hide behind a mention of it.
-///
-/// Panics if there is no style block, which is itself a failure worth naming:
-/// every rule below lives in one.
+/// Assertions about what the *stylesheet* says have to be scoped to it: a
+/// whole-document search is satisfied by a `meta` tag, an HTML comment or an
+/// attribute that merely mentions the same words, so it goes green with the rule
+/// deleted. Panics if there is no style block, which is itself a failure worth
+/// naming — every rule below lives in one.
 fn style_of(page: &str) -> String {
     let open = page
         .find("<style")
@@ -110,10 +104,8 @@ fn the_page_loads_generated_bindings_not_a_manual_wasm_abi() {
     }
 }
 
-/// The page is the app's whole interface: the ring, the orb, both duration
-/// boxes, the pace readout, the validation sentence and the button that arms
-/// the sound. `ui.rs` panics on a missing id, so a rename here is a crash at
-/// load, and these ids are the contract between the two files.
+/// These ids are the contract between the shell and `ui.rs`, which panics on a
+/// missing id — so a rename here is a crash at load.
 #[test]
 fn the_shell_carries_every_element_the_rust_expects() {
     let page = shell();
@@ -215,8 +207,6 @@ fn the_pattern_hint_is_not_rendered() {
     );
 }
 
-/// The pace readout baked into the shell must be the default's own readout.
-///
 /// `index.html` carries a hand-written "6 breaths/min" so the page shows
 /// something before the bindings load. Nothing kept it in step with
 /// `Settings::DEFAULT`, so the day the default changed from a 10-second cycle
@@ -240,7 +230,6 @@ fn the_shell_opens_on_the_default_pace() {
     );
 }
 
-/// The first `<…>` run containing `needle`, for asserting on a single tag.
 fn tag_containing<'a>(page: &'a str, needle: &str) -> Option<&'a str> {
     let mut depth = 0usize;
     let mut open = 0usize;
@@ -981,11 +970,21 @@ fn the_manifest_declares_no_theme_color_and_the_shell_owns_both_schemes() {
             "the shell must paint itself in {token}, the theme colour it declares"
         );
     }
-    // `id`, `start_url` and `scope` are `"./"` in build.rs so the site mounts
+    // `start_url` and `scope` are `"./"` in build.rs so the site mounts
     // anywhere; a stray absolute path would pin it to one host.
     assert!(
         code.contains("\"start_url\": \"./\""),
         "start_url must be relative"
+    );
+    // The manifest must declare no `id`. Chrome resolves a relative id against
+    // start_url's ORIGIN, not the manifest's directory, so the literal `"./"`
+    // this script once shipped gave every app in the family the same install
+    // identity: Android treats a manifest whose id matches an installed app as
+    // an update of that app, and the second install is swallowed. Left out,
+    // identity falls back to `start_url` -- this app's own mount point.
+    assert!(
+        !code.contains("\"id\""),
+        "the manifest must not declare an id: \"./\" resolves to the bare origin and collides with every sibling app"
     );
 }
 
@@ -1087,7 +1086,6 @@ fn rendered_text(page: &str) -> String {
     kept.join("\n")
 }
 
-/// The document with one element's contents removed, tags included.
 fn remove_block(page: &str, open: &str, close: &str) -> String {
     let mut out = String::with_capacity(page.len());
     let mut rest = page;
@@ -1103,7 +1101,6 @@ fn remove_block(page: &str, open: &str, close: &str) -> String {
     out
 }
 
-/// The document with every comment removed, in either syntax.
 fn strip_comments(page: &str) -> String {
     let mut out = page.to_string();
     for (open, close) in [("<!--", "-->"), ("/*", "*/")] {
@@ -1156,9 +1153,9 @@ fn string_literals(page: &str) -> Vec<String> {
 /// documents for the shell: an assertion about code must not be satisfied by a
 /// comment about the code.
 ///
-/// A line comment runs to the end of the line and a block comment to its closer.
-/// A `//` inside a string literal is not a comment, but no string these tests
-/// search for contains one, and a full Rust tokenizer is not worth the
+/// A line comment runs to the end of the line and a block comment to its
+/// closer. A `//` inside a string literal is not a comment, but no string these
+/// tests search for contains one, and a full Rust tokenizer is not worth the
 /// complexity to guard against it.
 fn strip_rust_comments(source: &str) -> String {
     let mut out = String::with_capacity(source.len());
@@ -1476,9 +1473,71 @@ fn only_master_can_reach_the_live_site() {
         .split("\n  deploy:")
         .nth(1)
         .expect("pages.yml must have a `deploy:` job");
+
+    // Read the gate out of the workflow with its COMMENTS STRIPPED. The comment
+    // block above the `if:` explains both halves of the gate by name, so a plain
+    // search over the raw text is satisfied by that explanation with the gate
+    // itself deleted. This is not hypothetical: the `RUSTFLAGS` assertion in
+    // `chess_clock`'s equivalent file shipped exactly that way -- commented out
+    // instead of deleted, and green.
+    let live = strip_yaml_comments(&pages);
+    let live_gate = live
+        .split("\n  deploy:")
+        .nth(1)
+        .and_then(|job| job.split_once("if:").map(|(_, after)| after))
+        .expect("the `deploy` job must have an `if:` gate");
+
+    // Half one: master, and only master.
     assert!(
-        deploy_job.contains("if:") && deploy_job.contains("github.ref == 'refs/heads/master'"),
+        live_gate.contains("github.ref == 'refs/heads/master'"),
         "the `deploy` job must be gated on the build being for master",
+    );
+
+    // Half two: and only in the repository that owns the site. `bot-git-ai/breath`
+    // is a real GitHub fork of `wdomitrz/breath`, and this workflow is
+    // deliberately byte-identical in both -- a fork exists precisely so its history
+    // and its files can be copied. So a gate that tests only the branch name cannot
+    // tell the two repositories apart: both have a `master`, and a push to the
+    // fork's master tries to publish a site it was never given.
+    //
+    // Two things then go wrong, and the first is the one that happens. A fork has
+    // no Pages site until someone enables one by hand, so every push to fork master
+    // dies at "Creating Pages deployment failed ... Ensure GitHub Pages has been
+    // enabled" -- the red `pages` runs on `bot-git-ai/breath` on 2026-10-02,
+    // before this clause existed. And if Pages were enabled there, the fork would
+    // serve its own copy, drifting from the published site as soon as the two
+    // masters diverge -- which they have already.
+    //
+    // `github.event.repository.fork` is the discriminator because it needs no
+    // configuration: it is supplied by the event, false upstream and true in the
+    // fork. The obvious alternative, a repository Actions variable, has the failure
+    // mode this assertion exists to prevent -- it would have to be set on the
+    // *upstream* repository to publish, and no account but the user's can do that,
+    // so the gate would ship silently off on the one repository where it matters.
+    assert!(
+        live_gate.contains("!github.event.repository.fork"),
+        "the `deploy` job must be gated on `!github.event.repository.fork`; this workflow is \
+         byte-identical in the fork `bot-git-ai/breath`, so a branch-name-only gate \
+         publishes from the fork too -- failing with 'Ensure GitHub Pages has been enabled' \
+         until Pages is enabled there, and serving a divergent copy afterwards",
+    );
+
+    // The two halves are ONE condition, not two gates. An `if:` per job would be an
+    // AND across two independent gates, and a second gate on the `build` job would
+    // silently stop the *build* from running on the fork rather than only its
+    // publish -- the opposite of what this is for: a fork push must still build,
+    // still run the full eight-file site check, and skip only the deploy.
+    assert!(
+        live.split("\n  deploy:")
+            .nth(1)
+            .and_then(|job| job.split_once("if:").map(|(_, after)| after))
+            .is_some_and(|gate| {
+                gate.contains("github.ref == 'refs/heads/master'")
+                    && gate.contains("!github.event.repository.fork")
+            }),
+        "the fork rule must extend the master gate, not replace it: `deploy` must be one `if:` \
+         testing both `github.ref` and `github.event.repository.fork`, so a fork push still \
+         builds and only its deploy is skipped",
     );
     // And the environment, which is what makes the repository's own approval
     // rules able to hold the live site back.

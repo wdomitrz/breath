@@ -28,12 +28,11 @@ use crate::pacer::{
     Validation, STORAGE_KEY, TICK_MS,
 };
 
-/// The custom properties the shell's CSS reads, and what each one means.
+/// Custom properties the shell's CSS reads, and the two attributes it keys off.
 const PROP_PROGRESS: &str = "--phase-progress";
 /// The ring's own colour, set per phase so the arc itself says which phase.
 const PROP_RING_COLOUR: &str = "--phase-colour";
-/// The attribute the stylesheet keys off to drop the orb's size easing during a
-/// hold.
+/// Tells the stylesheet to drop the orb's size easing during a hold.
 const ATTR_HOLDING: &str = "data-holding";
 /// Marks a hold box as in use rather than switched off.
 const ATTR_ACTIVE: &str = "data-active";
@@ -60,9 +59,8 @@ const SCOPE: &str = "./";
 /// label.** With only the original two, a hold would have to borrow one of them,
 /// and a hold after the exhale would look exactly like the inhale about to
 /// follow — the one moment where telling them apart is the entire point. The
-/// hold colour is a desaturated slate between the two: unmistakably *neither*
-/// moving colour, so "I am not breathing right now" is visible at a glance and
-/// does not depend on reading the word under the orb.
+/// hold colour is a desaturated slate that is *neither* moving colour, so "I am
+/// not breathing right now" is visible at a glance.
 fn phase_colour(kind: PhaseKind) -> &'static str {
     match kind {
         PhaseKind::Inhale => "var(--inhale)",
@@ -155,22 +153,17 @@ impl App {
             last_phase: None,
         }));
 
-        // The listeners are wired against this exact handle, not a copy of the
-        // state that existed while they were being attached.
         app.borrow().bind_events(&app);
         app.borrow_mut().render();
         app
     }
 
-    /// Wire the two inputs and the button.
+    /// Wire the duration boxes and the sound button.
     ///
     /// Three handlers for the life of the document, so each closure is dropped
     /// into the page's listener table and forgotten: nothing accumulates as the
     /// pacer runs. The tick below is the same trick for one timer.
     fn bind_events(&self, shared: &Shared) {
-        // Both duration boxes and the button listen against this one handle,
-        // which is the same state the render timer draws from. Three separate
-        // copies of the app would each drift; one cannot.
         for field in [Field::Inhale, Field::HoldIn, Field::Exhale, Field::HoldOut] {
             listen_change(field.element(self).as_ref(), Rc::clone(shared), field);
         }
@@ -185,8 +178,6 @@ impl App {
     fn tick_forever(shared: &Shared) {
         let app = Rc::clone(shared);
         let timer = Closure::wrap(Box::new(move || {
-            // `borrow_mut`, held across the body and never across the paint
-            // calls themselves, which do no re-entry.
             if let Ok(mut app) = app.try_borrow_mut() {
                 app.render();
             }
@@ -199,9 +190,8 @@ impl App {
             )
             .is_err()
         {
-            // Nothing was scheduled, so the handle has to go back to being a
-            // plain value or it is dropped and cancelled. Without this the
-            // pacer would show one frame and then stop, silently.
+            // Nothing was scheduled, so dropping the handle here cancels it
+            // rather than leaking a timer that will never run.
             return;
         }
         timer.forget();
@@ -274,7 +264,6 @@ impl App {
         self.sound_button.set_disabled(self.audio_ready);
     }
 
-    /// Paint one frame.
     fn render(&mut self) {
         let now = self.performance.now();
         let settings = self.pacer.settings;
@@ -299,11 +288,9 @@ impl App {
     /// slow drift rather than as stillness. Colouring the ring per phase is
     /// what lets "I am holding" be seen without reading the label.
     ///
-    /// The orb's size is a CSS custom property, exactly as in the original, and
-    /// under `prefers-reduced-motion: reduce` the stylesheet's transition is
-    /// switched off. So no branch is needed here for that: the shell's
-    /// `@media (prefers-reduced-motion: reduce) { .breath-orb { transition: none } }`
-    /// is honoured by the browser, and Rust sets the same property either way.
+    /// Reduced motion needs no branch here: the shell's
+    /// `@media (prefers-reduced-motion: reduce)` switches the orb's transition
+    /// off, and Rust sets the same custom property either way.
     fn paint_phase(&self, phase: &Phase) {
         self.ring
             .style()
@@ -329,12 +316,11 @@ impl App {
 
     /// Mark each hold box as in use or switched off.
     ///
-    /// Purely a presentation detail, and one that earns its place: a `0` in a
-    /// box looks the same whether it is a deliberate "no hold here" or a value
-    /// nobody has touched yet. The dimmed state and the word "off" in the label
-    /// make the difference visible, which is what lets the boxes sit on screen
-    /// at all rather than hiding behind a "show advanced" toggle — this app is
-    /// meant to be calm, and a toggle that hides the pattern is not.
+    /// A `0` in a box looks the same whether it is a deliberate "no hold here"
+    /// or a value nobody has touched yet. Making the difference visible is what
+    /// lets the boxes sit on screen at all rather than hiding behind a "show
+    /// advanced" toggle — this app is meant to be calm, and a toggle that hides
+    /// the pattern is not.
     fn sync_hold_fields(&self, settings: Settings) {
         for (field, seconds) in [
             (&self.hold_in_field, settings.hold_after_inhale_seconds),
@@ -393,11 +379,9 @@ impl App {
     /// One cue: a sine at the phase's note, doubled by a triangle an octave
     /// above it, both through one gain envelope.
     ///
-    /// The envelope is exponential, which is why its ends are [`Phase::CUE_FLOOR`]
-    /// rather than zero: an exponential ramp cannot reach zero, and starting
-    /// there throws in the browser. It rises to [`Phase::CUE_GAIN`] in
-    /// [`Phase::CUE_ATTACK_SECONDS`] and falls back over the rest of the cue, so
-    /// the note fades out instead of cutting.
+    /// The envelope is exponential, which is why its ends are
+    /// [`Phase::CUE_FLOOR`] rather than zero: an exponential ramp cannot reach
+    /// zero, and starting there throws in the browser.
     fn play_cue(&self, phase: &Phase) {
         if !self.audio_ready {
             return;
@@ -418,9 +402,8 @@ impl App {
         let now = context.current_time();
         let end = now + Phase::CUE_DURATION_SECONDS;
 
-        // `set_type` takes `&self` and throws on an argument a browser will not
-        // accept; sine and triangle are both universally valid, so the
-        // exception cannot fire here and is not worth a branch.
+        // `set_type` returns `Result`, but sine and triangle are valid in every
+        // browser, so the error cannot fire and is not worth a branch.
         oscillator.set_type(OscillatorType::Sine);
         oscillator
             .frequency()
@@ -450,8 +433,8 @@ impl App {
             web_sys::console::warn_1(&JsValue::from_str("The audio cue could not start."));
             return;
         }
-        // Stopping releases the nodes; the browser drops a stopped source's
-        // connections, so nothing is kept alive by them.
+        // Stopping releases the nodes: the browser drops a stopped source's
+        // connections, so nothing stays alive on account of them.
         let _ = oscillator.stop_with_when(end);
         let _ = overtone.stop_with_when(end);
     }
@@ -468,18 +451,13 @@ impl App {
 /// the other anyway.
 #[derive(Clone, Copy)]
 enum Field {
-    /// The inhale box.
     Inhale,
-    /// The hold-after-inhale box.
     HoldIn,
-    /// The exhale box.
     Exhale,
-    /// The hold-after-exhale box.
     HoldOut,
 }
 
 impl Field {
-    /// The element this field is bound to.
     fn element<'a>(&self, app: &'a App) -> &'a HtmlInputElement {
         match self {
             Self::Inhale => &app.inhale_input,
@@ -498,7 +476,6 @@ impl Field {
         parse_whole_seconds(&self.element(app).value())
     }
 
-    /// Adopt a duration read from this field.
     fn write(&self, app: &mut Settings, seconds: u32) {
         match self {
             Self::Inhale => app.inhale_seconds = seconds,
@@ -531,14 +508,14 @@ fn styled(document: &web_sys::Document, id: &str) -> HtmlElement {
         .unwrap_or_else(|_| panic!("#{id} is not an HTML element"))
 }
 
-/// Fetch one element by id as a typed input, or fail the whole start.
+/// Fetch one element by id as a typed input.
 fn input(document: &web_sys::Document, id: &str) -> HtmlInputElement {
     element(document, id)
         .dyn_into::<HtmlInputElement>()
         .unwrap_or_else(|_| panic!("#{id} is not an input"))
 }
 
-/// Fetch one element by id as a typed button, or fail the whole start.
+/// Fetch one element by id as a typed button.
 fn button(document: &web_sys::Document, id: &str) -> HtmlButtonElement {
     element(document, id)
         .dyn_into::<HtmlButtonElement>()
@@ -624,10 +601,10 @@ fn save_settings(settings: &Settings) {
 /// now for a stale one.
 async fn register_service_worker() {
     // Both accessors are infallible in `web-sys`: `window.navigator` is on
-    // every window and `navigator.serviceWorker` on every navigator. (A
-    // non-secure context does make the *property* absent, where JavaScript
-    // would hand back `undefined` -- but then `register` throws, which is the
-    // case below, and is the only case there is.)
+    // every window and `navigator.serviceWorker` on every navigator. A
+    // non-secure context does make the property absent, where JavaScript would
+    // hand back `undefined` -- but that surfaces as a rejection from `register`
+    // below, and is the only case there is.
     let container = window()
         .expect("the page has a window")
         .navigator()
@@ -691,8 +668,6 @@ async fn release_stale_registrations() {
         return;
     };
 
-    // This app's own directory, as an absolute URL with a trailing slash. The
-    // app is served from a subdirectory and every URL of ours is inside it.
     let Ok(home) = window().expect("the page has a window").location().href() else {
         return;
     };
@@ -766,7 +741,7 @@ fn script_belongs_to_app(script: &str, ours: &str) -> bool {
 pub fn start() {
     let app = App::start();
     App::tick_forever(&app);
-    // Spawned, not awaited: the pacer is already running on its own tick, and
-    // offline support is not worth a page that waits on the network to breathe.
+    // Spawned, not awaited: the pacer is already ticking, and offline support
+    // is not worth a page that waits on the network to breathe.
     spawn_local(register_service_worker());
 }

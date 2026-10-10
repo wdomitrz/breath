@@ -127,10 +127,10 @@
         color: var(--fg);
       }
 
-      /* The app is one column of controls, so it is centred on bot's own
-         measure rather than on a width invented here — 46rem is what every
-         other page on this origin is set to, and a narrower column would make
-         this page look like a different product at the same window size. */
+      /* The app is one column of controls, so it is centred inside the body rather
+         than filling it. The body's own 46rem is what every other page on this
+         origin is set to; this shell narrows to 34rem within that, because one
+         column of controls reads better narrow than spread to the full measure. */
       .app-shell {
         width: min(100%, 34rem);
         min-height: 100vh;
@@ -164,9 +164,7 @@
         place-items: center;
       }
 
-      /* The progress ring.
-
-         `--phase-progress` is how much of the circle the current phase has
+      /* `--phase-progress` is how much of the circle the current phase has
          swept, and it is painted in `--phase-colour`, which Rust sets per phase.
          So the ring says *which phase* by its own colour, not only through the
          label under it: a teal arc is filling, an amber arc is emptying, and a
@@ -363,9 +361,9 @@
       }
 
       /* The number boxes carry the same field styling as every other input on
-         this origin: a filled `--input-bg` panel inside the `--surface` box it
-         sits in, so the four read as fields in a panel rather than as four
-         floating outlines on the page background. */
+         this origin: a filled `--input-bg` with a `--border` rule, so they read
+         as fields rather than as four floating outlines on the page
+         background. */
       input {
         width: 100%;
         min-height: 44px;
