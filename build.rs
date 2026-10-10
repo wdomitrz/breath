@@ -203,7 +203,6 @@ fn manifest() -> String {
         })
         .collect();
     serde_json::json!({
-        "id": "./",
         "name": APP_NAME,
         "short_name": APP_NAME,
         "start_url": "./",
