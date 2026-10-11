@@ -220,6 +220,14 @@ files present and non-empty, nothing unexpected, no unsubstituted
 `__VERSION__`, bindings that still export, a manifest of the right shape — and
 that **every file the service worker precaches is one the build publishes**.
 
+The manifest is also the one precached file the worker **never serves from its
+cache**. It decides what an install *is*; a cached copy would let a fresh
+install read a manifest older than the last change to it and re-derive a stale
+identity — and the origin's Cache Storage survives an uninstall/reinstall, so
+the stale copy would outlive the app it came from. It stays in the precache
+list so a broken one still fails the install loudly; the fetch handler just
+always sends it to the network.
+
 That last check is not decoration. This repository shipped a seven-file `dist/`
 once: `ui.html` asked for `./icon.svg` and the worker precached `icon.svg`, but
 `build.rs` only ever rasterized the PNGs. The favicon 404ed for everyone, and
