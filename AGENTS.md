@@ -252,7 +252,11 @@ eight names, because a second copy of the truth is how the omission arose.
   byte, and `tests/shell.rs` asserts against the source, which is therefore the
   same thing.
 - `service-worker.js`: caches only a fixed app-shell allowlist, scope-specific
-  content-versioned cache, atomic install, no `skipWaiting`. Offline needs one
+  content-versioned cache, atomic install, and a `skipWaiting` that answers
+  only the page's `SKIP_WAITING` message. The page asks (`ui.rs`'s
+  `nudge_worker_update`) and reloads on `controllerchange`: an installed copy
+  updates on its next open, no update waits for a visit that never comes, and
+  no page is ever swapped under without having asked. Offline needs one
   successful online visit over HTTPS or localhost. Clearing site data removes
   offline support.
 - `build.rs`: writes the six files it owns into `dist/`, rasterizing the icons
@@ -339,10 +343,12 @@ all is that the compiler error is unhelpfully indirect:
   one 80 ms timer. Every borrow is taken and released inside a single callback
   with no DOM work and no re-entry in between; `try_borrow_mut` is used so a
   re-entrant event is skipped rather than panicking the page.
-- The service worker has no `skipWaiting`, so an update waits for old tabs to
-  close. That is deliberate — swapping the wasm under a live session would
-  change the pacer mid-breath — but it does mean a second tab can pin the old
-  version until it is closed.
+- The service worker's `skipWaiting` answers only the page's `SKIP_WAITING`
+  message. An update never swaps itself under a live session — the pacer must
+  not change mid-breath — and the page's ask comes with its own reload, so the
+  swap never lands under a page that did not ask for it. Without the ask an
+  installed copy can wait days for a phone to close the app; with it, the next
+  open updates.
 - Audio cannot be armed without a gesture, by browser policy. The button is
   therefore required, disabled once pressed, and the app is fully usable
   silent.
