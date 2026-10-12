@@ -119,77 +119,23 @@ precaches it — see the trap below.
 ## The four phases
 
 A cycle is **inhale → hold → exhale → hold**. Either hold may be zero, and both
-being zero reproduces the two-phase app exactly: same phases, same formulae, same
-ring, same pace. `both_holds_off_reproduces_the_two_phase_app_exactly` asserts
-that at every tenth of a second of a 4/6 cycle rather than assuming it, because
-this is the one guarantee that must not break silently.
+being zero reproduces the two-phase app exactly: same phases, same formulae,
+same ring, same pace. `src/pacer.rs` owns that guarantee and its tests enforce
+it; the default is 4-7-8-1 and used to be 4-in/6-out — see `Settings::DEFAULT`
+and the tests' `plain()` helper there for why, and for why only tests about the
+default name `DEFAULT`.
 
-**The default is 4-7-8-1, and used to be 4-in/6-out.** The two-phase behaviour is
-still a guarantee about *patterns with both holds off*, not about the default: it
-used to be worded "the default equals the two-phase app", which made the two
-statements indistinguishable and made the compat test fail for the wrong reason
-when the default changed. Tests about the default name `Settings::DEFAULT`; every
-other test builds its pattern through the `plain()` helper. Do not reach for
-`DEFAULT` as "some valid pattern" — that is what coupled eleven tests to a
-constant none of them were about.
+Four decisions were open. Each is recorded with its full reasoning at the code
+that implements it, because each could reasonably have gone the other way:
 
-Four decisions were open. Each is recorded here with its reasoning, because each
-could reasonably have gone the other way.
-
-**1. The two original rules measure the breath, not the pattern.** "At least 8
-seconds per breath" and "exhale no more than twice the inhale" were both written
-when the cycle *was* the breath. Reading them against the total cycle instead
-would turn the 8-second floor into a floor on the whole pattern, and would let a
-20-second hold satisfy a rule about how long a breath is — so a 3+3 pattern with
-a hold would "pass" for the wrong reason. Both now apply to inhale-plus-exhale
-alone, via `moving_seconds()`. Every two-phase pattern therefore validates
-exactly as it did, and the only rules a hold can newly fail are the three new
-ones. The pace readout does the opposite, and deliberately: it uses the **full**
-cycle, because a held breath is not a breath. Box breathing reads "3.8
-breaths/min", which is correct and is the point of the feature.
-
-**2. Hold range: zero, or 1–20 seconds; and at most twice the inhale.** Zero is
-never an error — it is the two-phase pattern, and it has to stay reachable
-without clearing a box. Twenty seconds is the working ceiling of breath-hold
-practice. The ratio needed the most thought, because two readings disagree:
-`hold <= inhale` is what box breathing actually prescribes, but it makes 4-4-4-4
-— the most widely prescribed retention pattern there is — *unreachable*, since a
-4-second hold would be the cap and the inhale is also 4. Two-to-one keeps box
-breathing available and bounds a hold to twice the movement that filled the lungs
-before it. The cost is that a 3-second inhale admits a 6-second hold, which
-against the 3-second minimum exhale is more than half the cycle; a user who wants
-that is doing something on purpose.
-Both holds are measured against the **inhale**, not the exhale: a hold is not a
-kind of exhale, and with nothing else to compare against the exhale would be the
-only candidate.
-
-**3. A hold gets its own colour and one note of its own.** Reusing the inhale
-tone was the cheap option and it is wrong — a hold after the exhale would sound
-exactly like the inhale about to follow, which is the one moment where telling
-them apart matters most. The hold tone is 587 Hz, a fifth above the exhale and
-a fourth below the inhale, so the three are heard as one ascending line; both
-holds share it, because from the inside they are the same instruction: wait. The
-hold *colour* is a desaturated slate that is neither of the moving colours, so "I am
-not breathing right now" is visible without reading the label.
-
-**4. A hold is the absence of movement.** The orb holds the size the movement
-before it left — full after an inhale, at rest after an exhale — and does not
-drift. The ring follows the same rule, which means a hold is motionless in its
-*entirety*, not just in the orb: the top hold parks the arc at full, the bottom
-hold leaves it at empty, and only the colour changes. This was not the first
-design. The bottom hold used to close the ring's arc, sweeping from full back
-to empty across its whole length, on the reasoning that four phases should read
-as one continuous sweep. That made the bottom hold the only phase in which the
-user watches a bar drain while being told to hold still, and a hold that empties
-the ring is a hold the eye reads as a slow exhale. The discontinuity it avoided
-is now paid instead at the top of the next inhale, where the empty ring meets
-its first sliver of fill — a smaller event, once per cycle, at the boundary the
-user is watching anyway. `data-holding` tells the stylesheet to drop the orb's
-size easing, because under `prefers-reduced-motion` an orb easing between two
-sizes it is not visiting reads as a drift rather than as stillness. The rule is
-asserted over every tenth of every hold, not at its endpoints, by
-`no_hold_moves_anything_on_the_dial`: a sweep is a thing that is *nearly* static
-at its ends, and sampling the ends is exactly how the old one got through.
+1. **The two original rules measure the breath, not the pattern.** See
+   `Settings::validate` and `Settings::moving_seconds` in `src/pacer.rs`.
+2. **A hold is zero, or 1–20 seconds, at most twice the inhale.** See
+   `MIN_HOLD_SECONDS` and `MAX_HOLD_INHALE_RATIO` in `src/pacer.rs`.
+3. **A hold gets its own colour and one note of its own.** See `phase_colour`
+   in `src/ui.rs` and `Phase::cue_frequency` in `src/pacer.rs`.
+4. **A hold is the absence of movement.** See `Settings::phase_at` in
+   `src/pacer.rs`.
 
 Verified in a browser, not just in unit tests: all four phases screenshotted in
 both themes, and the cues read out of `AudioParam.setValueAtTime` across a full
@@ -197,37 +143,12 @@ both themes, and the cues read out of `AudioParam.setValueAtTime` across a full
 
 ## Tests
 
-Two kinds, both under plain `cargo test`. No browser, no Node, no Chromium.
-
-- **Unit tests in `src/pacer.rs`** cover the app's actual decisions: the phase
-  at any instant in a cycle, the ring sweep and orb scale through both halves,
-  the boundary between them, the cycle's repetition, the whole validation rule
-  set and the order the rules fire in, the pace readout's one-decimal rounding,
-  and the persisted shape's round trip and its fallbacks. `src/pacer.rs` never
-  mentions `web-sys`, which is why they run anywhere.
-- **`tests/shell.rs`** asserts the invariants of the committed shell and of what
-  is and is not committed — see below.
-
-There is no test on `dist/`, deliberately. It is gitignored, so the release
-gate's exported tree never has it and cannot build it (that needs the wasm target
-and the pinned generator); a test asserting on it would run only in a
-developer's checkout, which is exactly where it is least likely to catch
-anything.
-
-What covers the built output is `.github/workflows/build.yml`, which runs the
-two build steps from a clean checkout and then inspects the result: all eight
-files present and non-empty, nothing unexpected, no unsubstituted
-`__VERSION__`, bindings that still export, a manifest of the right shape — and
-that **every file the service worker precaches is one the build publishes**.
-
-That last check is not decoration. This repository shipped a seven-file `dist/`
-once: `ui.html` asked for `./icon.svg` and the worker precached `icon.svg`, but
-`build.rs` only ever rasterized the PNGs. The favicon 404ed for everyone, and
-because `caches.addAll` rejects an entire install if any one URL 404s, the site
-silently got **no service worker and no offline support at all**. The symptom
-looks like a caching bug. The test derives its expectation from
-`src/service-worker.js` and `build.rs` rather than from a hardcoded list of
-eight names, because a second copy of the truth is how the omission arose.
+Two kinds, both under plain `cargo test`, with no browser, no Node and no
+Chromium: unit tests in `src/pacer.rs`, and `tests/shell.rs` — the executable
+specification of the committed shell's invariants; read it. It also records why
+nothing asserts on the gitignored `dist/` (`.github/workflows/build.yml` runs
+the two builds and inspects that instead) and the shipped-seven-file-`dist/`
+favicon bug behind its precache test.
 
 ## Code map
 
@@ -255,26 +176,13 @@ eight names, because a second copy of the truth is how the omission arose.
 
 ## Two deliberate departures from the original
 
-Both are noted here because they are decisions, not accidents.
+Both are noted here because they are decisions, not accidents; both stories are
+kept with the code that embodies them:
 
-**The `parseInt` truthiness quirk is gone.** The original read stored settings
-with `storedSettings.inhaleSeconds || DEFAULT.inhaleSeconds`, which means a
-stored `0` falls back to the default — but if a zero were *typed*, the value was
-adopted and `validateSettings` was then called on it, and `0 < 3` fails, so the
-pattern was rejected and never saved. Kept faithfully, that quirk would mean
-carrying an unusable zero through `Settings`; instead the fields are `u32` and a
-stored zero is a parse-level fallback. The user-visible behaviour is identical.
-A related case *is* preserved, because it is user-visible: a box the user has
-emptied reads as `None` and the pattern is left alone, so a half-typed value
-never freezes the orb.
-
-**Each duration box reads only itself.** The original bound one
-`handleInputChange` to both boxes, and it read both. Called once per box, that
-adopts the half-typed value in the *other* box at the same moment and persists
-it — so editing `exhale` alone would commit whatever was mid-edit in `inhale`.
-The handler here is told which box changed. The render pass fills the other in
-immediately, so the two are equivalent a moment later and only differ in the
-instant the change is committed.
+- **The `parseInt` truthiness quirk is gone** — see `parse_whole_seconds` in
+  `src/pacer.rs`; the related emptied-box behaviour that *is* preserved is on
+  `Field::read` in `src/ui.rs`.
+- **Each duration box reads only itself** — see the `Field` enum in `src/ui.rs`.
 
 ## Verification
 
@@ -292,32 +200,19 @@ matters.
 ### `web-sys` notes, for anyone doing the same job
 
 Verified against `web-sys 0.3.105`, and the reason several of them are here at
-all is that the compiler error is unhelpfully indirect:
+all is that the compiler error is unhelpfully indirect. Four of the notes live
+with the code that needed them: the audio-feature forensics in `Cargo.toml`,
+the `Element::style` cast on `styled()` and the `connect_with_audio_node` name
+on `play_cue` in `src/ui.rs`, and the does-not-throw `register` promise on
+`register_service_worker` in the same file. The rest:
 
-- The feature list in the shared spec is **not sufficient**. Beyond
-  `AudioContext`, `AudioContextState`, `OscillatorNode`, `OscillatorType`,
-  `GainNode` and `AudioScheduledSourceNode`, the calls this app makes need
-  `AudioParam` (for `oscillator.frequency` and `gain.gain`), `AudioNode` (for
-  `connect`) and `AudioDestinationNode` (for `AudioContext::destination`).
-  Each is separately `#[cfg]`-gated and none is implied by the six above.
 - `Navigator` is needed too, for `Window::navigator` — the property is on every
   window in every browser, but `web-sys` gates even the getter behind the
   feature, and the error says only "no method named `navigator` found for struct
   `Window`", which reads like a missing dependency rather than a feature.
-- `Element::style` **does not exist**. `style()` is on `HtmlElement` and there is
-  no `Deref` from `Element`, so custom properties need an explicit
-  `dyn_into::<HtmlElement>()`.
-- `AudioNode::connect` is generated as `connect_with_audio_node`, not `connect`,
-  because `AudioNode` has five overloads of it.
 - `Window::set_interval_with_callback_and_timeout_and_arguments_0` takes
   `&Function` (not `Option<&Function>`) and an **`i32`** timeout. Both are
   signature mismatches that read as "method not found".
-- `Navigator::service_worker()` returns a `ServiceWorkerContainer`, not an
-  `Option`, and `ServiceWorkerContainer::register` returns a `js_sys::Promise`
-  that does **not** throw on failure — a non-secure context rejects it, so the
-  rejection has to be caught or the app logs an unhandled rejection. Note
-  `Promise::catch` is typed to take `&ScopedClosure` directly, the one place in
-  this crate where a closure is passed instead of a function reference.
 - `tiny_skia::Pixmap::new` returns `Option`, not `Result` — so an
   `unwrap_or_else(|error| ...)` closure does not compile, and the error is the
   confusing "closure is expected to take 0 arguments".

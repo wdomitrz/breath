@@ -1,6 +1,3 @@
-// Copyright (c) 2026 Witalis Domitrz <witekdomitrz@gmail.com>
-// AGPL License
-
 //! Invariants of the app shell source, and of what is and is not committed.
 //!
 //! Everything here reads committed files. `dist/` is build output and is
@@ -60,8 +57,7 @@ fn tracked_files() -> Option<String> {
         .args(["rev-parse", "--git-dir"])
         .current_dir(root())
         .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false);
+        .is_ok_and(|out| out.status.success());
     if !inside {
         return None;
     }
@@ -243,8 +239,8 @@ fn tag_containing<'a>(page: &'a str, needle: &str) -> Option<&'a str> {
             }
             '>' => {
                 depth = depth.saturating_sub(1);
-                if depth == 0 && page[open..index + 1].contains(needle) {
-                    return Some(&page[open..index + 1]);
+                if depth == 0 && page[open..=index].contains(needle) {
+                    return Some(&page[open..=index]);
                 }
             }
             _ => {}
@@ -565,7 +561,7 @@ fn worker_assets(worker: &str) -> Vec<String> {
         .expect("the worker must declare ASSETS");
     let body_start = start + "const ASSETS = [".len();
     let end = worker[body_start..]
-        .find("]")
+        .find(']')
         .expect("the ASSETS list must be terminated");
     worker[body_start..body_start + end]
         .split(',')
@@ -896,7 +892,7 @@ fn the_committed_icon_is_one_svg_and_the_source_of_the_pngs() {
             let hex: String = rest
                 .chars()
                 .skip(1)
-                .take_while(|c| c.is_ascii_hexdigit())
+                .take_while(char::is_ascii_hexdigit)
                 .collect();
             (hex.len() == 6).then(|| format!("#{hex}"))
         })
@@ -1047,7 +1043,7 @@ fn rendered_text(page: &str) -> String {
     let without_comments = strip_comments(&trimmed);
 
     let mut kept: Vec<String> = vec![without_comments.replace(['<', '>'], " ")];
-    for line in kept.iter_mut() {
+    for line in &mut kept {
         let mut single = String::with_capacity(line.len());
         let mut spaces = 0;
         for character in line.chars() {
@@ -1067,7 +1063,7 @@ fn rendered_text(page: &str) -> String {
         let Some(end) = chunk.find('>') else { continue };
         let tag = &chunk[..end];
         if tag.contains("name=\"description\"") {
-            if let (Some(start), Some(stop)) = (tag.find("content=\""), tag.rfind("\"")) {
+            if let (Some(start), Some(stop)) = (tag.find("content=\""), tag.rfind('"')) {
                 kept.push(tag[start + "content=\"".len()..stop].to_string());
             }
         }
@@ -1266,9 +1262,9 @@ fn the_pages_build_generates_bindings_for_the_pinned_runtime() {
     // others, and a step-scoped variable that looks top-level reads as global.
     if live.contains(indirect) {
         let declared = format!("WASM_BINDGEN_VERSION: {version}");
-        let line = live
+        let found = live
             .lines()
-            .find(|line| line.trim_start().starts_with("WASM_BINDGEN_VERSION:"))
+            .find(|candidate| candidate.trim_start().starts_with("WASM_BINDGEN_VERSION:"))
             .unwrap_or_else(|| {
                 panic!(
                     "pages.yml installs $WASM_BINDGEN_VERSION but never declares it as {version}"
@@ -1278,11 +1274,11 @@ fn the_pages_build_generates_bindings_for_the_pinned_runtime() {
         // trailing spaces: `strip_yaml_comments` leaves the indent and the
         // padding before a `#` behind, so an exact-prefix match on the raw line
         // fails on a correctly declared variable whose line ends in a space.
-        let live_line = line.trim_end();
+        let live_line = found.trim_end();
         assert!(
             live_line.starts_with("  WASM_BINDGEN_VERSION:"),
             "WASM_BINDGEN_VERSION must be declared in the workflow's top-level `env:` (found: \
-             {line:?}); `env:` on one step does not reach the others, and a step-scoped \
+             {found:?}); `env:` on one step does not reach the others, and a step-scoped \
              declaration reads exactly like a global one",
         );
         assert_eq!(

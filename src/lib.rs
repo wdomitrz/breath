@@ -1,6 +1,3 @@
-// Copyright (c) 2026 Witalis Domitrz <witekdomitrz@gmail.com>
-// AGPL License
-
 //! Breath — a paced-breathing pacer, in Rust.
 //!
 //! A browser application and nothing else: no server, no binary. `cargo build`

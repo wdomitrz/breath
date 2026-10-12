@@ -1,6 +1,3 @@
-// Copyright (c) 2026 Witalis Domitrz <witekdomitrz@gmail.com>
-// AGPL License
-
 //! The breathing pacer, with no web-sys in sight.
 //!
 //! Everything the app *decides* — the phase, the orb scale, the ring sweep,
@@ -128,6 +125,7 @@ impl Settings {
     };
 
     /// The width of one full breath, in seconds: all four phases.
+    #[must_use]
     pub fn cycle_seconds(&self) -> u32 {
         self.inhale_seconds
             + self.hold_after_inhale_seconds
@@ -141,6 +139,7 @@ impl Settings {
     /// The two rules the original app was built around are about this, not about
     /// [`Self::cycle_seconds`]: a hold makes the cycle longer, but it does not
     /// make the breath itself longer or more lopsided. See [`Self::validate`].
+    #[must_use]
     pub fn moving_seconds(&self) -> u32 {
         self.inhale_seconds + self.exhale_seconds
     }
@@ -149,6 +148,7 @@ impl Settings {
     ///
     /// Not `Default` — this is how the tests, and any caller thinking in terms
     /// of the original app, spell "4 in, 6 out" without four fields of noise.
+    #[must_use]
     pub const fn moving(inhale_seconds: u32, exhale_seconds: u32) -> Self {
         Self {
             inhale_seconds,
@@ -159,6 +159,7 @@ impl Settings {
     }
 
     /// Whether either hold is set.
+    #[must_use]
     pub fn has_holds(&self) -> bool {
         self.hold_after_inhale_seconds > 0 || self.hold_after_exhale_seconds > 0
     }
@@ -181,6 +182,7 @@ impl Settings {
     /// [`Self::moving_seconds`] — inhale plus exhale — which also means every
     /// two-phase pattern validates exactly as it did before, and the three new
     /// rules are the only ones a hold can newly fail.
+    #[must_use]
     pub fn validate(&self) -> Validation {
         if self.inhale_seconds < 3 || self.inhale_seconds > MAX_INHALE_SECONDS {
             return Validation::Invalid("Inhale should be 3 to 10 seconds.");
@@ -222,6 +224,7 @@ impl Settings {
     }
 
     /// Whether this pattern is one the pacer will run.
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         self.validate().is_valid()
     }
@@ -233,16 +236,24 @@ impl Settings {
     /// JavaScript *rounds* rather than truncates — so a 4-7 pattern reads
     /// "5.5 breaths/min" and a 9-12 pattern reads "2.9", not "2.8". See
     /// [`format_tenths`] for the rule.
+    #[must_use]
     pub fn pace_label(&self) -> String {
         let bpm = 60.0 / f64::from(self.cycle_seconds());
         let formatted = if bpm.fract() == 0.0 {
-            format!("{}", bpm as u32)
+            // Exact by construction: whole (the branch condition) and positive
+            // — 60 over a positive cycle width — so the cast cannot truncate
+            // or lose the sign.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            {
+                format!("{}", bpm as u32)
+            }
         } else {
             format_tenths(bpm)
         };
         format!("{formatted} breaths/min")
     }
 
+    #[must_use]
     pub fn cycle_seconds_f64(&self) -> f64 {
         f64::from(self.cycle_seconds())
     }
@@ -254,6 +265,7 @@ impl Settings {
     /// is ever zero — which [`Self::validate`] forbids, and which only an
     /// unset input box can produce — the elapsed time is returned unchanged
     /// rather than dividing by zero, because a render tick must not panic.
+    #[must_use]
     pub fn cycle_position_seconds(&self, elapsed_ms: f64) -> f64 {
         let cycle = self.cycle_seconds_f64();
         if cycle <= 0.0 {
@@ -286,6 +298,7 @@ impl Settings {
     /// the ring is still one continuous arc — the exhale sweeps it back to
     /// empty rather than filling a second time — and the only discontinuity
     /// left is the empty ring meeting the first sliver of the next inhale.
+    #[must_use]
     pub fn phase_at(&self, elapsed_ms: f64) -> Phase {
         let position = self.cycle_position_seconds(elapsed_ms);
         let mut remaining = position;
@@ -392,6 +405,7 @@ pub struct Pacer {
 
 impl Pacer {
     /// A pacer showing `settings`, starting its cycle now.
+    #[must_use]
     pub fn new(settings: Settings, now_ms: f64) -> Self {
         Self {
             settings,
@@ -409,11 +423,13 @@ impl Pacer {
     }
 
     /// How long ago the cycle began, in milliseconds.
+    #[must_use]
     pub fn elapsed_ms(&self, now_ms: f64) -> f64 {
         (now_ms - self.cycle_started_at_ms).max(0.0)
     }
 
     /// The phase the pacer is in at `now_ms`.
+    #[must_use]
     pub fn phase_at(&self, now_ms: f64) -> Phase {
         self.settings.phase_at(self.elapsed_ms(now_ms))
     }
@@ -434,11 +450,13 @@ pub enum Validation {
 
 impl Validation {
     /// Whether the pattern can be paced.
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         matches!(self, Self::Valid)
     }
 
     /// The sentence to show, empty when the pattern is fine.
+    #[must_use]
     pub fn message(&self) -> &'static str {
         match self {
             Self::Valid => "",
@@ -549,6 +567,7 @@ impl Phase {
     /// that follows it, in the one situation where the user most needs to tell
     /// them apart. One note for both holds is right — from the inside they are
     /// the same instruction, which is to wait.
+    #[must_use]
     pub fn cue_frequency(&self) -> f32 {
         match self.kind {
             PhaseKind::Inhale => 740.0,
@@ -569,18 +588,26 @@ impl Phase {
 /// exact tie for the cycle widths this app accepts — that would need `cycle` to
 /// divide `600` into exact tenths — so no readout this app can produce reaches
 /// the disagreement.
+#[must_use]
 pub fn format_tenths(value: f64) -> String {
     let scaled = value * 10.0;
     // `f64::floor` of `scaled + 0.5` is round-half-up, which is what
     // `toFixed` does for the positive values this app formats.
     let rounded = (scaled + 0.5).floor();
-    let whole = (rounded / 10.0) as u64;
-    let tenth = (rounded as i64) % 10;
-    format!("{whole}.{tenth}")
+    // Both casts are exact by construction: `rounded` is a small non-negative
+    // integer held exactly in an `f64`, and the largest cycle width this app
+    // accepts leaves it far inside either target type.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    {
+        let whole = (rounded / 10.0) as u64;
+        let tenth = (rounded as i64) % 10;
+        format!("{whole}.{tenth}")
+    }
 }
 
 /// The pace readout for a whole number of breaths per minute: an exact integer
 /// is written without a decimal point at all.
+#[must_use]
 pub fn format_whole(value: u32) -> String {
     format!("{value} breaths/min")
 }
@@ -591,6 +618,7 @@ pub fn format_whole(value: u32) -> String {
 /// holding a pattern the pacer would refuse to run. A stored value is never
 /// trusted over validation, so a hand-edited `localStorage` entry cannot put the
 /// pacer into an impossible cycle.
+#[must_use]
 pub fn settings_from_json(raw: Option<&str>) -> Settings {
     let Some(raw) = raw else {
         return Settings::DEFAULT;
@@ -633,6 +661,7 @@ pub struct PersistedSettings {
 
 impl PersistedSettings {
     /// The settings to remember for `settings`.
+    #[must_use]
     pub fn of(settings: &Settings) -> Self {
         Self {
             inhale_seconds: settings.inhale_seconds,
@@ -643,6 +672,7 @@ impl PersistedSettings {
     }
 
     /// The live settings this describes.
+    #[must_use]
     pub fn settings(&self) -> Settings {
         Settings {
             inhale_seconds: self.inhale_seconds,
@@ -653,6 +683,12 @@ impl PersistedSettings {
     }
 
     /// The JSON to write to `localStorage`.
+    #[must_use]
+    /// # Panics
+    ///
+    /// Panics only if `serde_json` cannot serialise the four duration fields —
+    /// which cannot happen, since `u32` always serialises. The `expect` states
+    /// that invariant rather than inventing a silent failure mode.
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).expect("four integers serialise")
     }
@@ -695,7 +731,7 @@ mod tests {
     /// 10 010 ms is an integer well inside `f64`'s exact range. The error is in
     /// the arithmetic — dividing by 1000 and then taking the remainder — which
     /// leaves the two readings 2.1e-16 of a second apart: 5.3e-15 of the ring's
-    /// progress_percent, or 1.4e-17 of the orb's scale. Both are orders of
+    /// `progress_percent`, or 1.4e-17 of the orb's scale. Both are orders of
     /// magnitude under the tolerance below, and far too small to see on a
     /// 300 px dial.
     const EXACT_ENOUGH: f64 = 1e-9;
@@ -752,7 +788,12 @@ mod tests {
         let settings = plain();
         let phase = settings.phase_at(0.0);
         assert_eq!(phase.name, "Inhale");
-        assert_eq!(phase.progress_percent, 0.0);
+        // Exact by construction: at 0 ms the pacer returns the inhale
+        // template's `progress_percent` unchanged.
+        #[allow(clippy::float_cmp, reason = "value is by-construction exact")]
+        {
+            assert_eq!(phase.progress_percent, 0.0);
+        }
         assert!((phase.orb_scale - 0.74).abs() < 1e-9);
     }
 
@@ -833,16 +874,21 @@ mod tests {
 
     #[test]
     fn each_phase_cue_is_its_own_note() {
-        assert_eq!(
-            plain().phase_at(0.0).cue_frequency(),
-            740.0,
-            "inhale is 740 Hz"
-        );
-        assert_eq!(
-            plain().phase_at(5000.0).cue_frequency(),
-            392.0,
-            "exhale is 392 Hz"
-        );
+        // Exact by construction: the returned frequencies are pattern-matched
+        // literals, not computed values.
+        #[allow(clippy::float_cmp, reason = "returned literals, exact by construction")]
+        {
+            assert_eq!(
+                plain().phase_at(0.0).cue_frequency(),
+                740.0,
+                "inhale is 740 Hz"
+            );
+            assert_eq!(
+                plain().phase_at(5000.0).cue_frequency(),
+                392.0,
+                "exhale is 392 Hz"
+            );
+        }
     }
 
     #[test]
@@ -898,7 +944,15 @@ mod tests {
         assert_eq!(pacer.phase_at(5000.0).name, "Exhale");
         pacer.restart(5000.0);
         assert_eq!(pacer.phase_at(5000.0).name, "Inhale");
-        assert_eq!(pacer.elapsed_ms(5000.0), 0.0);
+        // Exact by construction: `elapsed_ms` is clamped with `max(0.0)`, so a
+        // fresh restart reads exactly zero.
+        #[allow(
+            clippy::float_cmp,
+            reason = "clamped to exactly 0.0, exact by construction"
+        )]
+        {
+            assert_eq!(pacer.elapsed_ms(5000.0), 0.0);
+        }
     }
 
     #[test]
@@ -907,7 +961,14 @@ mod tests {
         // A clock reading taken before the cycle began — which a coarse
         // `performance.now()` across a restore can produce — must not yield a
         // negative age and an inverted sweep.
-        assert_eq!(pacer.elapsed_ms(0.0), 0.0);
+        // Exact by construction: same clamp as above.
+        #[allow(
+            clippy::float_cmp,
+            reason = "clamped to exactly 0.0, exact by construction"
+        )]
+        {
+            assert_eq!(pacer.elapsed_ms(0.0), 0.0);
+        }
         assert_eq!(pacer.phase_at(0.0).name, "Inhale");
     }
 
@@ -1283,7 +1344,11 @@ mod tests {
                 // is precisely the state the hold is required to hold.
                 let held = settings.phase_at(start + len / 2.0 + 1.0);
                 assert_eq!(held.kind, kind, "start={start} len={len}");
-                for tenth in 0..(len / 100.0) as u32 {
+                // Exact by construction: `len` is whole milliseconds, so
+                // tenths of it are whole too.
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let tenths = (len / 100.0) as u32;
+                for tenth in 0..tenths {
                     let now = settings.phase_at(start + f64::from(tenth) * 100.0);
                     assert_eq!(
                         now.kind, kind,
@@ -1403,9 +1468,14 @@ mod tests {
         let hold_top = boxed().phase_at(5000.0).cue_frequency();
         let hold_bottom = boxed().phase_at(13_000.0).cue_frequency();
 
-        assert_eq!(hold_top, hold_bottom, "one note for both holds");
-        assert_ne!(hold_top, inhale, "a hold is not the inhale");
-        assert_ne!(hold_top, exhale, "a hold is not the exhale");
+        // Exact by construction: these compare returned pattern-matched
+        // literals against each other, no arithmetic involved.
+        #[allow(clippy::float_cmp, reason = "returned literals, exact by construction")]
+        {
+            assert_eq!(hold_top, hold_bottom, "one note for both holds");
+            assert_ne!(hold_top, inhale, "a hold is not the inhale");
+            assert_ne!(hold_top, exhale, "a hold is not the exhale");
+        }
         // And it sits between the two rather than above or below both, so the
         // three are heard as one ascending line.
         assert!(

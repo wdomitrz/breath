@@ -1,6 +1,3 @@
-// Copyright (c) 2026 Witalis Domitrz <witekdomitrz@gmail.com>
-// AGPL License
-
 //! Write the static site to `dist/` while the crate compiles.
 //!
 //! Publishing a browser application is a file copy, not a program run. This

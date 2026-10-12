@@ -1,6 +1,3 @@
-// Copyright (c) 2026 Witalis Domitrz <witekdomitrz@gmail.com>
-// AGPL License
-
 //! The browser half: read the page, paint what [`crate::pacer`] decides, sound
 //! the cue, and register the service worker.
 //!
@@ -94,19 +91,15 @@ struct App {
     /// a live region that is removed stops announcing, and one that is emptied
     /// in place still clears.
     validation_message: Element,
-    /// The inhale duration input.
     inhale_input: HtmlInputElement,
     /// The label wrapping the hold-after-inhale box, so its "off" state can be
     /// marked. Zero is a deliberate setting, not an empty field, and a user has
     /// to be able to tell that without reading the help text.
     hold_in_field: Element,
-    /// The hold-after-inhale duration input.
     hold_in_input: HtmlInputElement,
-    /// The exhale duration input.
     exhale_input: HtmlInputElement,
     /// The label wrapping the hold-after-exhale box.
     hold_out_field: Element,
-    /// The hold-after-exhale duration input.
     hold_out_input: HtmlInputElement,
     /// The "Enable sound" button.
     sound_button: HtmlButtonElement,
