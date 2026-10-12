@@ -42,7 +42,9 @@ js-sys = "0.3.105"
 # wider registration left behind by an earlier version is unregistered. Both
 # need the registration's `active()` worker (`ServiceWorker`, for
 # `script_url`) and the URL type; `Location` is `Window::location`, which is how
-# the app's own directory is resolved on the page side.
+# the app's own directory is resolved on the page side. `ServiceWorkerState`
+# is how an installed-and-waiting worker is recognised before the page asks
+# it in.
 #
 # Deliberately absent: `MediaQueryList`. `prefers-color-scheme` and
 # `prefers-reduced-motion` are handled in the shell's CSS, exactly as the
@@ -51,7 +53,8 @@ web-sys = { version = "0.3.105", features = [
   "Window", "Document", "Element", "Node", "HtmlElement", "HtmlInputElement",
   "HtmlButtonElement", "Event", "EventTarget", "Performance", "Storage",
   "CssStyleDeclaration", "ServiceWorkerContainer", "ServiceWorkerRegistration",
-  "ServiceWorker", "RegistrationOptions", "Location", "Url", "Navigator",
+  "ServiceWorker", "ServiceWorkerState", "RegistrationOptions", "Location",
+  "Url", "Navigator",
   "AudioContext", "AudioContextState", "OscillatorNode", "OscillatorType",
   "GainNode", "AudioScheduledSourceNode",
   "AudioParam", "AudioNode", "AudioDestinationNode",

@@ -184,7 +184,7 @@ fn rasterize_icon(svg: &Path, size: u32) -> Vec<u8> {
 /// The web app manifest, assembled so its icon list matches [`ICON_SIZES`].
 ///
 /// `start_url` and `scope` are `"./"` so the site mounts anywhere. There is
-/// deliberately no `id`: Chrome resolves a relative id against the start_url's
+/// deliberately no `id`: Chrome resolves a relative `id` against the `start_url`'s
 /// *origin*, so the `"./"` this manifest once carried gave every app in the
 /// family the same install identity, and Android swallowed the second install
 /// as an update of the first. Left out, identity falls back to `start_url`,
