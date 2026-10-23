@@ -9,12 +9,12 @@
        icon and the PNGs are derived output. -->
   <circle
     fill="none"
-    stroke="#0f766e"
+    stroke="#606060"
     stroke-width="48"
     cx="256"
     cy="256"
     r="190"
   />
-  <circle fill="#0f766e" cx="256" cy="256" r="76" />
+  <circle fill="#606060" cx="256" cy="256" r="76" />
   </g>
 </svg>

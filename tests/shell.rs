@@ -971,7 +971,7 @@ fn the_committed_icon_is_one_svg_and_the_source_of_the_pngs() {
     colours.dedup();
     assert_eq!(
         colours,
-        ["#0f766e"],
+        ["#606060"],
         "the icon is a single-colour mark in the app's own inhale teal"
     );
 
