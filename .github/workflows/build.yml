@@ -247,7 +247,7 @@ jobs:
               published = handle.read()
           assert published == source, "dist/icon.svg is not the committed icon"
           assert hashlib.sha256(source).hexdigest() == (
-              "0e12e8abd1ba9b78c5334c3d6e4b04e7b69639804f0cd8f0a361137f2458e667"
+              "662d22c9f3a2848b99d48b0616b34dd7725335923460f14972cc7275b4954fa8"
           ), "assets/icon.svg is no longer the recorded icon"
           print("  ok   dist/icon.svg is the committed icon")
 
