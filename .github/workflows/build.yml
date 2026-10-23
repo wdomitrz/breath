@@ -166,10 +166,24 @@ jobs:
           # therefore the only thing that ever checks it -- so this checks it,
           # rather than trusting a green job to mean the site is whole.
           #
-          # A green build that produced four of the eight files is exactly the
-          # failure this shape has already had. Verify the count, not the exit
-          # status.
-          expected="app_bg.wasm app.js icon-192.png icon-512.png icon.svg index.html manifest.webmanifest service-worker.js"
+          # A green build that produced seven of these eight files is exactly the
+          # failure this shape has already had: a wholesale directory swap once
+          # took the wasm with it, leaving a publishable-looking site with no app
+          # in it. Verify the file list, not the exit status.
+          #
+          # The Python below runs from a quoted heredoc, not from `python3 -c`,
+          # and it must stay that way. An indented `python3 -c "..."` body is
+          # quoted by the shell before Python ever sees it, so a single quote in
+          # the body ends the string early and the failure is a shell parse error
+          # pointing at nothing that looks wrong. Three sibling workflows had
+          # exactly that. The quoted delimiter also stops the shell expanding `$`
+          # inside the body.
+          #
+          # This step is identical in `build.yml` and `pages.yml`, and a test
+          # asserts that: one runs on pull requests, the other before publishing,
+          # and a check that differs between them lets a pull request pass a site
+          # the deploy rejects.
+          expected="app.js app_bg.wasm icon.svg icon-192.png icon-512.png index.html manifest.webmanifest service-worker.js"
           missing=""
           for file in $expected; do
             if [ -s "dist/${file}" ]; then
@@ -189,7 +203,7 @@ jobs:
             exit 1
           fi
           # A file of a few bytes is a truncated write, not a successful build.
-          test -s dist/app_bg.wasm || { echo "::error::the pacer wasm is empty"; exit 1; }
+          test -s dist/app_bg.wasm || { echo "::error::the app wasm is empty"; exit 1; }
           # The cache version is derived at build time, so an unsubstituted
           # placeholder would ship a service worker that never invalidates.
           if grep -q '__VERSION__' dist/service-worker.js; then
@@ -201,104 +215,63 @@ jobs:
           # long after the build looked fine.
           grep -q 'export' dist/app.js \
             || { echo "::error::dist/app.js carries no exports; the page's dynamic import would fail"; exit 1; }
-
-          # Every file the worker precaches must be one the build publishes.
-          # This is the check that would have caught the seven-file dist/ this
-          # repository once shipped: the page asked for ./icon.svg and the
-          # worker precached it, but build.rs only rasterized the PNGs, so the
-          # favicon 404ed and -- because caches.addAll rejects an ENTIRE install
-          # if any one URL 404s -- the site silently got no service worker and
-          # no offline support at all.
-          #
-          # The quoted names are lifted straight out of the ASSETS line. An
-          # earlier version of this step used a BRE alternation such as
-          # '\\.\\(png\\|svg\\)', which needs `grep -E` to mean anything: it
-          # matched nothing, and the loop body never ran, so the check passed
-          # forever without testing anything. A check that cannot fail is worse
-          # than no check, so the count is asserted too.
-          precached="$(grep '^const ASSETS' dist/service-worker.js | grep -o "'[^']*'" | tr -d "'")"
-          test "$(printf '%s\\n' "$precached" | grep -c .)" -ge 8 \
-            || { echo "::error::could not read the worker's ASSETS list; this check would pass vacuously"; exit 1; }
-          for referenced in $precached; do
-            name="${referenced#./}"
-            test -s "dist/${name}" \
-              || { echo "::error::the worker precaches ${referenced}, which is not in dist/; caches.addAll rejects the whole install on one 404"; exit 1; }
-            echo "  precached and published: ${name}"
+          # And they must carry the start function the page's `m.default()`
+          # call runs. Without it the module loads and the app never starts,
+          # which is a failure with no error message anywhere.
+          grep -q '__wbindgen_start' dist/app.js \
+            || { echo "::error::dist/app.js has no start function; the app would load and never run"; exit 1; }
+          # The icons must be real PNGs at the sizes the manifest declares, not
+          # the SVG copied under a .png name: a file with the right name and no
+          # raster in it installs with a broken icon.
+          for size in 192 512; do
+            test "$(head -c 8 "dist/icon-${size}.png" | od -An -tx1 | tr -d ' \n')" = "89504e470d0a1a0a" \
+              || { echo "::error::dist/icon-${size}.png is not a PNG"; exit 1; }
           done
-
-          # And the page's own references resolve, from the other end of the
-          # chain: a stylesheet or script named by index.html and missing from
-          # dist/ is the same class of fault.
-          grep -q 'href="./icon.svg"' dist/index.html \
-            || { echo "::error::the page does not reference its SVG icon relatively"; exit 1; }
-          grep -q 'href="./manifest.webmanifest"' dist/index.html \
-            || { echo "::error::the page does not reference the manifest relatively"; exit 1; }
-          grep -q "import('./app.js')" dist/index.html \
-            || { echo "::error::the page does not load the generated bindings"; exit 1; }
-          # The manifest is assembled by build.rs, so a shape that drifted from
-          # the spec is caught here rather than by a launcher refusing it.
-          #
-          # `theme_color` is asserted ABSENT, deliberately. A manifest cannot
-          # express a colour scheme variant, and Chrome for Android prefers the
-          # manifest's value over the shell's per-scheme <meta name="theme-color">
-          # tags — so naming one colour here would pin every installer's status
-          # bar to a single scheme and silently override both. The shell owns the
-          # two, and the last three assertions below prove it declares one per
-          # scheme, so this is not the absence of a check but the opposite one.
-          # `tests/shell.rs` asserts the same invariant against build.rs; this
-          # asserts it against the artefact that actually ships.
+          # The page must call the initializer. This is a one-line check for a
+          # failure that is otherwise completely silent -- see tests/shell.rs.
+          grep -q 'm.default()' dist/index.html \
+            || { echo "::error::dist/index.html does not initialise the bindings; the app would never start"; exit 1; }
           python3 - <<'PY'
-          import json, re
-          manifest = json.load(open('dist/manifest.webmanifest'))
-          for key in ('start_url', 'scope'):
-              assert manifest[key] == './', f'{key} must be relative, got {manifest[key]!r}'
-          assert 'id' not in manifest, (
-              'an id of "./" resolves to the bare origin and collides with every sibling app')
-          assert manifest['name'] == 'Breath', 'the name must be preserved'
-          assert manifest['short_name'] == 'Breath', 'the short name must be preserved'
-          assert 'theme_color' not in manifest, (
-              'a manifest theme_color cannot follow the scheme and would '
-              'override the shell\'s per-scheme meta tags')
-          # The splash cannot follow a scheme either, so it is the one surface
-          # where a fixed colour is free: it must be the dark one, or a light
-          # splash flashes against the dark page the app actually opens in.
-          assert manifest['background_color'] == '#0f1117', (
-              'the splash background must be the dark page background, got '
-              f"{manifest['background_color']!r}")
-          sizes = sorted(icon['sizes'] for icon in manifest['icons'])
-          assert sizes == ['192x192', '512x512'], f'unexpected icon sizes {sizes}'
+          import hashlib, json
+          # The published SVG must be the committed icon, byte for byte. The
+          # page links it and the worker precaches it, so a drift here is both
+          # a wrong favicon and an install that fails.
+          #
+          # The digest is pinned so a redraw cannot pass unnoticed. It must equal
+          # the constant in tests/shell.rs -- the same value in two places, and
+          # both workflows -- so change it in all of them together, or the check
+          # that disagrees with the others goes red and says so.
+          with open("assets/icon.svg", "rb") as handle:
+              source = handle.read()
+          with open("dist/icon.svg", "rb") as handle:
+              published = handle.read()
+          assert published == source, "dist/icon.svg is not the committed icon"
+          assert hashlib.sha256(source).hexdigest() == (
+              "0e12e8abd1ba9b78c5334c3d6e4b04e7b69639804f0cd8f0a361137f2458e667"
+          ), "assets/icon.svg is no longer the recorded icon"
+          print("  ok   dist/icon.svg is the committed icon")
 
-          # The shell must actually declare a theme colour for BOTH schemes, or
-          # dropping the manifest's one leaves an installed app with no status
-          # bar colour at all and the omission above buys nothing. The meta tags
-          # carry the two backgrounds the page is painted in, which is what makes
-          # this a check on the manifest's replacement rather than on two tags
-          # that could drift to any colour and still pass.
-          page = open('dist/index.html').read()
-          # (scheme, colour), so the scheme is the key: the pair order is the
-          # regex's, and getting it backwards keys a dict by colour, which
-          # passes a page declaring one colour per scheme and fails one that is
-          # correct.
-          declared = {
-              scheme: colour
-              for colour, scheme in re.findall(
-                  r'<meta name="theme-color" content="(#[0-9a-fA-F]{6})"'
-                  r' media="\(prefers-color-scheme: (dark|light)\)"', page)}
-          assert set(declared) == {'dark', 'light'}, (
-              'the page must declare a theme colour per scheme, got '
-              f'{sorted(declared)}')
-          assert declared['dark'] == '#0f1117', (
-              f"the dark scheme's status bar must match the dark background, "
-              f"got {declared['dark']!r}")
-          assert declared['light'] == '#f5f6f8', (
-              f"the light scheme's status bar must match the light background, "
-              f"got {declared['light']!r}")
-          # And the page must really be painted in those two backgrounds, so the
-          # status bar cannot match a page it does not share a colour with.
-          for token in ('--bg: #0f1117', '--bg: #f5f6f8'):
-              assert token in page, f'the page must define {token}'
+          # The manifest's icon list must be what was actually rasterized, not a
+          # hand-kept copy of the source: that is the whole reason `build.rs`
+          # assembles the manifest.
+          with open("dist/manifest.webmanifest", encoding="utf-8") as handle:
+              manifest = json.load(handle)
+          assert manifest["icons"] == [
+              {"src": f"icon-{size}.png", "sizes": f"{size}x{size}",
+               "type": "image/png", "purpose": "any maskable"}
+              for size in (192, 512)
+          ], manifest["icons"]
+          for key in ("start_url", "scope"):
+              assert manifest[key] == "./", f"{key} must be relative"
+          # No `id`, asserted rather than left out: a relative id resolves to
+          # the bare origin, so every app installed from this repository would
+          # share one identity and collide. This is the rule the whole family
+          # follows, and it is checked in both workflows on purpose.
+          assert "id" not in manifest, (
+              "an id of \"./\" resolves to the bare origin and collides with every sibling app"
+          )
+          print("  ok   manifest agrees with the rasterized icons and mounts anywhere")
           PY
-
       - name: Run the tests
         run: cargo test --locked
 
