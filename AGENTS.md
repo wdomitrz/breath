@@ -48,10 +48,13 @@ There is **no run step and no server**: the build is the whole story.
 
 `wasm-bindgen` installs to `~/.cargo/bin`, which is on `PATH` in a normal login
 shell; in a bare or non-login shell call it by absolute path
-(`~/.cargo/bin/wasm-bindgen`). The version is pinned to `=0.2.128` in
-`Cargo.toml` and must match the CLI exactly — a mismatched generator produces
-bindings the runtime will not load, and the page then fails with "Could not load
-the breathing pacer". No npm or JS build tool is needed.
+(`~/.cargo/bin/wasm-bindgen`). `Cargo.toml` asks for `wasm-bindgen = "0.2"` and
+`Cargo.lock` records the one version that means, because `wasm-bindgen-futures`,
+`js-sys` and `web-sys` each depend on an exact `wasm-bindgen`. The CLI must be
+that version — a mismatched generator produces bindings the runtime will not
+load, and the page then fails with "Could not load the breathing pacer". Both
+workflows read the version from `Cargo.lock` instead of naming it, so there is
+nothing to keep in step. No npm or JS build tool is needed.
 
 ## The static site
 
@@ -303,7 +306,7 @@ matters.
 
 ### `web-sys` notes, for anyone doing the same job
 
-Verified against `web-sys 0.3.105`, and the reason several of them are here at
+Verified against `web-sys` 0.3, and the reason several of them are here at
 all is that the compiler error is unhelpfully indirect:
 
 - The feature list in the shared spec is **not sufficient**. Beyond

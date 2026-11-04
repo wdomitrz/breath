@@ -17,7 +17,9 @@ Two steps, because there are two targets. Nothing generated is committed.
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.128 --locked
+# the generator must be the version Cargo.lock records
+cargo install wasm-bindgen-cli --locked \
+  --version "$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)"
 
 # 1. the site: compile to wasm and generate the JS bindings
 cargo build --locked --lib --target wasm32-unknown-unknown --release
@@ -93,9 +95,11 @@ a missing file.
 
 - `wasm-bindgen` installs to `~/.cargo/bin`, which is **not** on `PATH` in a
   non-login shell. Add it, or call it by absolute path.
-- The generator version is pinned to `=0.2.128` and must match `Cargo.toml`. A
-  mismatch produces bindings the page won't load, and it fails with "Could not
-  load the breathing pacer".
+- The generator must be the `wasm-bindgen` version `Cargo.lock` records — the
+  `cargo install` line above reads it from there; `Cargo.toml` asks for
+  `wasm-bindgen = "0.2"` and the lock decides which version that is. A mismatch
+  produces bindings the page won't load, and it fails with "Could not load the
+  breathing pacer".
 - After changing anything in `src/pacer.rs` or `src/ui.rs`, run all four commands
   again. The wasm is not committed, so nothing reminds you — and a `dist/` built
   from a stale one ships a pacer that predates your change, silently.
